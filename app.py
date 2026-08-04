@@ -47,6 +47,10 @@ if uploaded_docx is not None:
     with st.spinner("Applying Perfect Government Alignment..."):
         soup = BeautifulSoup(raw_html, 'html.parser')
 
+        # WeasyPrint layout fixes: Using strict HTML tables instead of CSS positioning
+        # guarantees that logos stay perfectly glued to the left and right edges 
+        # without spilling over borders or squishing into the center.
+        
         full_html = f"""
         <!DOCTYPE html>
         <html>
@@ -63,29 +67,27 @@ if uploaded_docx is not None:
                 }}
                 
                 /* ----------------------------------------------------- */
-                /* 1. RUNNING HEADER (Matches PPT exactly)               */
+                /* 1. RUNNING HEADER (Bulletproof Table Layout)          */
                 /* ----------------------------------------------------- */
-                header {{ 
+                #page-header {{ 
                     position: running(pageHeader); 
                     width: 100%;
                 }}
                 
-                /* Invisible table to force left/right edge alignment */
-                .hdr-layout {{
+                .header-table {{
                     width: 100%;
-                    border: none !important;
-                    margin-top: -10px;
+                    border-collapse: collapse;
+                    border-bottom: 2px solid #000;
+                    margin-bottom: 10px;
                 }}
-                .hdr-layout td {{
-                    vertical-align: middle;
-                    border: none !important; /* Removes ugly table borders in header */
-                    padding: 0;
-                }}
+                
+                .header-table td {{ padding-bottom: 10px; vertical-align: middle; border: none; }}
+                
                 .h-left {{ text-align: left; width: 15%; }}
                 .h-center {{ text-align: center; width: 70%; font-size: 16px; font-weight: bold; color: #000; }}
                 .h-right {{ text-align: right; width: 15%; }}
                 
-                .hdr-logo {{ height: 60px; max-width: 90px; object-fit: contain; }}
+                .hdr-logo {{ height: 60px; object-fit: contain; }}
 
                 /* ----------------------------------------------------- */
                 /* 2. PAGE SETTINGS                                      */
@@ -95,8 +97,14 @@ if uploaded_docx is not None:
                     margin: 3.5cm 2cm 2.5cm 2cm;
                     background-color: #ffffff; 
                     
-                    @top-center {{ content: element(pageHeader); }}
-                    @bottom-center {{ content: counter(page); font-family: 'Arial', sans-serif; }}
+                    @top-center {{ 
+                        content: element(pageHeader); 
+                        width: 100%; 
+                    }}
+                    @bottom-center {{ 
+                        content: counter(page); 
+                        font-family: 'Arial', sans-serif; 
+                    }}
                 }}
 
                 /* ----------------------------------------------------- */
@@ -115,7 +123,8 @@ if uploaded_docx is not None:
                     width: 21cm;
                     height: 29.7cm;
                     background-color: #0A192F; /* Very dark slate/navy */
-                    overflow: hidden;
+                    box-sizing: border-box;
+                    padding: 1.5cm; /* Outer margin */
                     text-align: center;
                 }}
 
@@ -130,42 +139,37 @@ if uploaded_docx is not None:
                     z-index: 1;
                 }}
 
+                /* Using Padding instead of Absolute Positioning keeps logos inside */
                 .cover-border {{
-                    position: absolute;
-                    top: 1.5cm; left: 1.5cm; right: 1.5cm; bottom: 1.5cm;
+                    position: relative;
+                    width: 100%; 
+                    height: 100%;
                     border: 4px solid #D4AF37; /* Gold */
                     outline: 1px solid #D4AF37;
                     outline-offset: -10px;
                     z-index: 2;
-                    display: flex;
-                    flex-direction: column;
-                    justify-content: space-between;
-                    padding: 2cm;
                     box-sizing: border-box;
+                    padding: 2cm;
                 }}
 
-                .cover-logos {{
-                    position: relative;
+                .cover-logos-table {{
                     width: 100%;
-                    height: 120px;
+                    border-collapse: collapse;
                 }}
-                /* Added white background so AMC logo is visible on dark blue */
-                .c-logo-amc, .c-logo-ntep {{
-                    position: absolute; 
-                    top: 0; 
+                
+                .c-logo {{
                     height: 110px;
                     background-color: #ffffff; 
                     border-radius: 50%; 
                     padding: 5px;
                 }}
-                .c-logo-amc {{ left: 0; }}
-                .c-logo-ntep {{ right: 0; }}
 
                 .cover-title-box {{
                     background-color: rgba(10, 25, 47, 0.85);
                     border: 2px solid #D4AF37;
                     padding: 40px 20px;
-                    margin: 1cm 0;
+                    margin-top: 3cm;
+                    margin-bottom: 5cm;
                 }}
 
                 .cover-title {{
@@ -192,6 +196,7 @@ if uploaded_docx is not None:
                     font-family: 'Georgia', serif;
                     font-size: 18px;
                     color: #FFFFFF;
+                    width: 100%;
                 }}
 
                 /* ----------------------------------------------------- */
@@ -208,25 +213,29 @@ if uploaded_docx is not None:
             </style>
         </head>
         <body>
-            <!-- Perfect PPT-Style Header -->
-            <header>
-                <table class="hdr-layout">
+            <!-- Header -->
+            <div id="page-header">
+                <table class="header-table">
                     <tr>
                         <td class="h-left"><img src="{amc_logo_b64}" class="hdr-logo" alt="AMC Logo"></td>
                         <td class="h-center">રાષ્ટ્રીય ક્ષયરોગ નિવારણ કાર્યક્રમ (NTEP) - AMC</td>
                         <td class="h-right"><img src="{ntep_logo_b64}" class="hdr-logo" alt="NTEP Logo"></td>
                     </tr>
                 </table>
-            </header>
+            </div>
             
             <!-- Classic Cover Page -->
             <div class="cover-page">
                 <div class="cover-bg"></div>
                 <div class="cover-border">
-                    <div class="cover-logos">
-                        <img src="{amc_logo_b64}" class="c-logo-amc" alt="AMC Logo">
-                        <img src="{ntep_logo_b64}" class="c-logo-ntep" alt="NTEP Logo">
-                    </div>
+                    
+                    <!-- Logos Table inside the Border ensures they never bleed out -->
+                    <table class="cover-logos-table">
+                        <tr>
+                            <td style="text-align: left;"><img src="{amc_logo_b64}" class="c-logo" alt="AMC Logo"></td>
+                            <td style="text-align: right;"><img src="{ntep_logo_b64}" class="c-logo" alt="NTEP Logo"></td>
+                        </tr>
+                    </table>
                     
                     <div class="cover-title-box">
                         <div class="cover-title">Public Health<br>Action</div>
@@ -238,6 +247,7 @@ if uploaded_docx is not None:
                         Ahmedabad Municipal Corporation<br><br>
                         &copy; 2026
                     </div>
+                    
                 </div>
             </div>
             
@@ -291,3 +301,4 @@ if uploaded_docx is not None:
     
     with st.spinner("Rendering 3D Flipbook Viewer..."):
         components.html(flipbook_html, height=750, scrolling=False)
+```eof
