@@ -6,96 +6,120 @@ from bs4 import BeautifulSoup
 import tempfile
 import os
 
-# --- Configuration ---
-st.set_page_config(page_title="AMC NTEP Flipbook Generator", layout="wide")
-st.title("AMC NTEP - Automated Flipbook & PDF Generator")
+st.set_page_config(page_title="AMC NTEP Manual Generator", layout="wide")
+st.title("AMC NTEP - Official Booklet Generator")
+st.write("Upload your Gujarati Word document to generate a formatted PDF manual.")
 
-# --- UI: File Uploads ---
-st.sidebar.header("Upload Assets")
-uploaded_docx = st.sidebar.file_uploader("Upload Content Word Document (.docx)", type=["docx"])
-uploaded_logo = st.sidebar.file_uploader("Upload AMC NTEP Logo (PNG/JPG)", type=["png", "jpg", "jpeg"])
-theme_color = st.sidebar.color_picker("Pick a Theme Color", "#004B87") # Default blue
+# --- Helper Function: Convert local image to Base64 ---
+# WeasyPrint works best with logos when they are embedded directly as base64 data
+def get_image_base64(filepath):
+    if os.path.exists(filepath):
+        with open(filepath, "rb") as image_file:
+            encoded_string = base64.b64encode(image_file.read()).decode()
+            mime_type = "image/png" if filepath.lower().endswith(".png") else "image/jpeg"
+            return f"data:{mime_type};base64,{encoded_string}"
+    return ""
+
+# Read the logos you uploaded to GitHub
+# Replace these filenames if you rename them in your repository
+amc_logo_b64 = get_image_base64("Amdavad_Municipal_Corporation_logo.png")
+ntep_logo_b64 = get_image_base64("1-s2.0-S0019570720303152-gr1.jpg") # Assuming this is the NTEP logo
+
+# --- UI: File Upload ---
+uploaded_docx = st.file_uploader("Upload Content Word Document (.docx)", type=["docx"])
 
 if uploaded_docx is not None:
-    # --- Step 1: Convert DOCX to HTML using Mammoth ---
-    # Mammoth focuses on semantic conversion, keeping your text exactly as is but stripping messy Word styles.
-    with st.spinner("Extracting content from Word Document..."):
-        # We need a temporary file because mammoth expects a file-like object
+    with st.spinner("Extracting Gujarati content..."):
         with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_docx:
             tmp_docx.write(uploaded_docx.read())
             tmp_docx_path = tmp_docx.name
 
         with open(tmp_docx_path, "rb") as docx_file:
-            # You can define custom style maps here if your word doc has specific styles
-            # style_map = "p[style-name='Heading 1'] => h1.module-title:fresh"
             result = mammoth.convert_to_html(docx_file)
             raw_html = result.value
-        
-        os.remove(tmp_docx_path) # Cleanup
+        os.remove(tmp_docx_path) 
 
-    # --- Step 2: Inject Styling, Cover, and Logos (HTML Manipulation) ---
-    with st.spinner("Applying theme and structuring booklet..."):
+    with st.spinner("Applying Government Manual Formatting..."):
         soup = BeautifulSoup(raw_html, 'html.parser')
-        
-        # 1. Handle Logo
-        logo_html = ""
-        if uploaded_logo:
-             logo_bytes = uploaded_logo.read()
-             logo_b64 = base64.b64encode(logo_bytes).decode()
-             logo_mime = uploaded_logo.type
-             logo_html = f'<img src="data:{logo_mime};base64,{logo_b64}" class="cover-logo" alt="AMC NTEP Logo">'
 
-        # 2. Build the full HTML Document
-        # We use CSS for pagination (@page), page breaks, and styling
+        # Build the HTML with Gujarati Font and Fixed Header for Logos
         full_html = f"""
         <!DOCTYPE html>
         <html>
         <head>
             <meta charset="utf-8">
             <style>
-                /* Base Booklet Styles */
-                body {{ font-family: 'Arial', sans-serif; line-height: 1.6; color: #333; }}
+                /* Import Gujarati Font from Google Fonts */
+                @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Gujarati:wght@400;700&display=swap');
                 
-                /* Print & PDF Settings (WeasyPrint uses these) */
+                /* Base Booklet Styles */
+                body {{ 
+                    font-family: 'Noto Sans Gujarati', sans-serif; 
+                    line-height: 1.6; 
+                    color: #000; 
+                    text-align: justify;
+                }}
+                
+                /* Page Layout & Margins */
                 @page {{
                     size: A4;
-                    margin: 2cm;
-                    @bottom-center {{ content: counter(page); }}
+                    /* Top margin is large (3.5cm) to make room for the fixed header logos */
+                    margin: 3.5cm 2cm 2cm 2cm;
+                    @bottom-center {{ 
+                        content: counter(page); 
+                        font-family: 'Arial', sans-serif;
+                    }}
                 }}
                 
-                /* Cover Page Styling */
-                .cover-page {{
-                    text-align: center;
-                    page-break-after: always;
-                    padding-top: 100px;
+                /* Fixed Header for Logos on EVERY Page */
+                header {{ 
+                    position: fixed; 
+                    top: -2.5cm; /* Push header up into the margin space */
+                    left: 0px; 
+                    right: 0px; 
+                    height: 2cm; 
+                    border-bottom: 2px solid #000;
+                    padding-bottom: 10px;
                 }}
-                .cover-logo {{ max-width: 250px; margin-bottom: 30px; }}
-                .cover-title {{ font-size: 3em; color: {theme_color}; margin-bottom: 20px; }}
                 
-                /* Module & Content Styling */
-                h1 {{ color: {theme_color}; page-break-before: always; border-bottom: 2px solid {theme_color}; padding-bottom: 10px; }}
-                h2 {{ color: #444; margin-top: 30px; }}
+                .logo-left {{ float: left; height: 60px; max-width: 150px; object-fit: contain; }}
+                .logo-right {{ float: right; height: 60px; max-width: 150px; object-fit: contain; }}
                 
-                /* Ensure tables look good */
-                table {{ width: 100%; border-collapse: collapse; margin-bottom: 20px; }}
-                th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-                th {{ background-color: {theme_color}; color: white; }}
+                .header-title {{ 
+                    text-align: center; 
+                    font-weight: bold; 
+                    padding-top: 20px; 
+                    font-size: 16px; 
+                }}
                 
-                /* Custom Index (Placeholder - building a dynamic index requires parsing the DOM) */
-                .index-page {{ page-break-after: always; }}
+                /* Government Document Formatting */
+                h1, h2, h3 {{ color: #000; font-weight: bold; }}
+                h1 {{ 
+                    page-break-before: always; /* Start new modules on a new page */
+                    border-bottom: 1px solid #ccc; 
+                    padding-bottom: 5px;
+                }}
+                
+                /* Ensure lists match the screenshots */
+                ul, ol {{ margin-left: 20px; padding-left: 10px; }}
+                li {{ margin-bottom: 8px; }}
+                
+                /* Fix tables for data */
+                table {{ width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 15px; }}
+                th, td {{ border: 1px solid #000; padding: 8px; text-align: left; }}
+                th {{ background-color: #f2f2f2; font-weight: bold; }}
+                
             </style>
         </head>
         <body>
-            <!-- Generated Cover Page -->
-            <div class="cover-page">
-                {logo_html}
-                <h1 class="cover-title">AMC NTEP Operational Booklet</h1>
-                <h2>Departmental Guidelines & Modules</h2>
-            </div>
+            <!-- This header repeats on every page generated by WeasyPrint -->
+            <header>
+                <img src="{ntep_logo_b64}" class="logo-left" alt="NTEP Logo">
+                <img src="{amc_logo_b64}" class="logo-right" alt="AMC Logo">
+                <div class="header-title">રાષ્ટ્રીય ક્ષયરોગ નિવારણ કાર્યક્રમ (NTEP) - AMC</div>
+            </header>
             
-            <!-- (Optional) You would generate an index here by finding all h1/h2 tags -->
-            
-            <!-- The Extracted Content -->
+            <!-- The Extracted Word Document Content -->
             <div class="content">
                 {str(soup)}
             </div>
@@ -103,59 +127,14 @@ if uploaded_docx is not None:
         </html>
         """
 
-    # --- Step 3: Generate PDF using WeasyPrint ---
-    with st.spinner("Generating PDF..."):
+    with st.spinner("Generating PDF (This may take a moment to download fonts)..."):
         pdf_bytes = weasyprint.HTML(string=full_html).write_pdf()
 
-    # --- Step 4: Display & Download ---
-    st.success("Booklet Generated Successfully!")
+    st.success("Manual Generated Successfully!")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        st.download_button(
-            label="📄 Download PDF Booklet",
-            data=pdf_bytes,
-            file_name="AMC_NTEP_Booklet.pdf",
-            mime="application/pdf"
-        )
-    
-    # --- Step 5: The Flipbook Integration (The Tricky Part) ---
-    st.header("Interactive Flipbook Preview")
-    
-    # Note on Flipbooks in Streamlit:
-    # Streamlit doesn't have a native 'flipbook' widget. You have to embed HTML/JS.
-    # The most robust way is to use Streamlit's components.html to inject a library like turn.js.
-    # However, Turn.js expects pages to be separate DIVs, not a continuous scroll.
-    # We must format our HTML specifically for the flipbook structure.
-    
-    flipbook_html = f"""
-    <html>
-    <head>
-        <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/turn.js/3/turn.min.js"></script>
-        <style>
-            #flipbook {{ width: 800px; height: 600px; margin: 0 auto; }}
-            #flipbook .page {{ background: white; border: 1px solid #ccc; padding: 20px; overflow: hidden; }}
-            /* Add styles to handle mammoth's continuous HTML into pages (requires complex JS pagination) */
-        </style>
-    </head>
-    <body>
-        <div id="flipbook">
-            <!-- In a production app, you need logic to split the 'full_html' into distinct page DIVs here -->
-            <div class="page">Cover Page<br>{logo_html}</div>
-            <div class="page">Page 1 Content...</div>
-            <div class="page">Page 2 Content...</div>
-        </div>
-        <script>
-            $("#flipbook").turn({{ width: 800, height: 600, autoCenter: true }});
-        </script>
-    </body>
-    </html>
-    """
-    
-    import streamlit.components.v1 as components
-    # components.html(flipbook_html, height=650)
-    st.info("To render the true 3D flipbook, the continuous HTML must be paginated into images or distinct DIVs. The PDF is ready for download above.")
-
-else:
-    st.info("Please upload a .docx file to begin.")
+    st.download_button(
+        label="📄 Download Official PDF Manual",
+        data=pdf_bytes,
+        file_name="AMC_NTEP_Operational_Manual.pdf",
+        mime="application/pdf"
+    )
