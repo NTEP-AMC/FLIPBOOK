@@ -10,7 +10,6 @@ import os
 st.set_page_config(page_title="AMC NTEP Manual Generator", layout="wide")
 st.title("AMC NTEP - Official Booklet & Flipbook Generator")
 
-# --- Helper Function: Convert local image to Base64 ---
 def get_image_base64(filepath):
     if os.path.exists(filepath):
         with open(filepath, "rb") as image_file:
@@ -19,7 +18,6 @@ def get_image_base64(filepath):
             return f"data:{mime_type};base64,{encoded_string}"
     return ""
 
-# Read the logos you uploaded to GitHub
 amc_logo_b64 = get_image_base64("Amdavad_Municipal_Corporation_logo.png")
 ntep_logo_b64 = get_image_base64("1-s2.0-S0019570720303152-gr1.jpg") 
 
@@ -36,10 +34,9 @@ if uploaded_docx is not None:
             raw_html = result.value
         os.remove(tmp_docx_path) 
 
-    with st.spinner("Applying 3D Theme and Generating PDF..."):
+    with st.spinner("Applying Official Government Theme..."):
         soup = BeautifulSoup(raw_html, 'html.parser')
 
-        # --- HTML & CSS Construction ---
         full_html = f"""
         <!DOCTYPE html>
         <html>
@@ -51,12 +48,12 @@ if uploaded_docx is not None:
                 body {{ 
                     font-family: 'Noto Sans Gujarati', sans-serif; 
                     line-height: 1.6; 
-                    color: #111; 
+                    color: #000; 
                     text-align: justify;
                 }}
                 
                 /* ----------------------------------------------------- */
-                /* 1. RUNNING HEADER (Switched: AMC Left, NTEP Right)    */
+                /* RUNNING HEADER (AMC Left, NTEP Right)                 */
                 /* ----------------------------------------------------- */
                 header {{ 
                     position: running(pageHeader); 
@@ -67,36 +64,36 @@ if uploaded_docx is not None:
                 .header-table {{ 
                     width: 100%; 
                     border-collapse: collapse; 
-                    border-bottom: 2px solid #004B87; 
+                    border-bottom: 2px solid #000; 
                 }}
                 .header-table td {{ vertical-align: middle; padding-bottom: 10px; }}
                 
                 .header-left {{ width: 20%; text-align: left; }}
-                .header-left img {{ height: 55px; max-width: 100px; object-fit: contain; }}
+                .header-left img {{ height: 65px; max-width: 100px; object-fit: contain; }}
                 
-                .header-center {{ width: 60%; text-align: center; font-weight: bold; font-size: 15px; color: #004B87; }}
+                .header-center {{ width: 60%; text-align: center; font-weight: bold; font-size: 16px; color: #000; }}
                 
                 .header-right {{ width: 20%; text-align: right; }}
-                .header-right img {{ height: 55px; max-width: 100px; object-fit: contain; }}
+                .header-right img {{ height: 65px; max-width: 100px; object-fit: contain; }}
 
                 /* ----------------------------------------------------- */
-                /* 2. PAGE SETTINGS                                      */
+                /* PAGE SETTINGS                                         */
                 /* ----------------------------------------------------- */
                 @page {{
                     size: A4;
-                    margin: 3.5cm 2cm 2cm 2cm;
-                    background-color: #FFFAEC; 
+                    margin: 3.5cm 2.5cm 2.5cm 2.5cm;
+                    background-color: #ffffff; 
                     
                     @top-center {{ content: element(pageHeader); }}
                     @bottom-center {{ content: counter(page); font-family: 'Arial', sans-serif; }}
                 }}
 
                 /* ----------------------------------------------------- */
-                /* 3. NEW 3D COVER PAGE DESIGN                           */
+                /* FORMAL GOVERNMENT COVER PAGE                          */
                 /* ----------------------------------------------------- */
                 @page cover {{
                     margin: 0cm; 
-                    background: linear-gradient(135deg, #002244 0%, #0055A4 100%); /* Deep rich blue */
+                    background-color: #ffffff; 
                     @top-center {{ content: none; }} 
                     @bottom-center {{ content: none; }} 
                 }}
@@ -106,85 +103,79 @@ if uploaded_docx is not None:
                     page-break-after: always;
                     height: 29.7cm; 
                     width: 21cm;
-                    padding: 2.5cm; 
+                    padding: 3cm; 
                     box-sizing: border-box;
                     font-family: 'Arial', sans-serif; 
-                }}
-
-                /* The 3D Floating White Card */
-                .cover-card {{
-                    background-color: #ffffff;
-                    height: 100%;
-                    width: 100%;
-                    border-radius: 12px;
-                    /* Strong drop shadow for 3D effect */
-                    box-shadow: 15px 20px 40px rgba(0,0,0,0.6), -5px -5px 15px rgba(255,255,255,0.1);
-                    padding: 2.5cm;
-                    box-sizing: border-box;
+                    /* Thick, authoritative double border */
+                    border: 12px solid #004B87;
+                    outline: 2px solid #004B87;
+                    outline-offset: -20px;
                     text-align: center;
-                    border-top: 6px solid #FFC000; /* Gold trim */
                     position: relative;
                 }}
 
-                /* Switched Logos on Cover */
                 .cover-logos {{ 
                     width: 100%; 
-                    margin-bottom: 3.5cm; 
+                    margin-top: 1cm;
+                    margin-bottom: 3cm; 
                 }}
-                .logo-amc {{ float: left; height: 110px; }}
-                .logo-ntep {{ float: right; height: 110px; }}
-                
-                /* Clearfix for logos */
-                .cover-logos::after {{
-                    content: "";
-                    clear: both;
-                    display: table;
+                .logo-amc {{ float: left; height: 130px; }}
+                .logo-ntep {{ float: right; height: 130px; }}
+                .cover-logos::after {{ content: ""; clear: both; display: table; }}
+
+                .cover-department {{
+                    font-size: 22px;
+                    color: #333;
+                    text-transform: uppercase;
+                    margin-bottom: 2cm;
+                    font-weight: bold;
+                    letter-spacing: 1px;
                 }}
 
-                /* 3D Text Effect */
                 .cover-title {{ 
-                    font-size: 50px; 
+                    font-size: 55px; 
                     font-weight: 900; 
-                    color: #004B87; 
+                    color: #000; 
                     text-transform: uppercase; 
-                    letter-spacing: 1px;
+                    border-top: 3px solid #004B87;
+                    border-bottom: 3px solid #004B87;
+                    padding: 30px 0;
+                    margin-bottom: 2cm;
                     line-height: 1.2;
-                    text-shadow: 3px 3px 6px rgba(0,0,0,0.2), -1px -1px 0 rgba(255,255,255,1);
-                    margin-bottom: 25px;
                 }}
                 
                 .cover-subtitle {{ 
-                    font-size: 22px; 
-                    color: #444; 
+                    font-size: 26px; 
+                    color: #004B87; 
                     font-weight: bold;
-                    margin-top: 30px;
                 }}
                 
                 .cover-footer {{
                     position: absolute;
-                    bottom: 2cm;
+                    bottom: 3cm;
                     left: 0;
                     width: 100%;
                     text-align: center;
-                    font-size: 15px;
-                    color: #777;
+                    font-size: 18px;
+                    font-weight: bold;
+                    color: #000;
                 }}
 
                 /* ----------------------------------------------------- */
-                /* 4. CONTENT FORMATTING                                 */
+                /* CONTENT FORMATTING                                    */
                 /* ----------------------------------------------------- */
-                .content h1 {{ page-break-before: always; color: #004B87; border-bottom: 2px solid #FFC000; padding-bottom: 5px; margin-top: 0; }}
-                .content h2, .content h3 {{ color: #222; font-weight: bold; margin-top: 25px; }}
+                .content h1 {{ page-break-before: always; color: #000; border-bottom: 2px solid #000; padding-bottom: 5px; margin-top: 0; }}
+                .content h2, .content h3 {{ color: #000; font-weight: bold; margin-top: 25px; }}
                 .content ul, .content ol {{ margin-left: 20px; padding-left: 10px; }}
                 .content li {{ margin-bottom: 8px; }}
                 .content table {{ width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 15px; }}
-                .content th, .content td {{ border: 1px solid #333; padding: 10px; text-align: left; background-color: white; }}
-                .content th {{ background-color: #004B87; color: white; font-weight: bold; text-align: center; }}
+                .content th, .content td {{ border: 1px solid #000; padding: 10px; text-align: left; background-color: white; }}
+                .content th {{ background-color: #f2f2f2; color: #000; font-weight: bold; text-align: center; }}
                 
             </style>
         </head>
         <body>
-            <!-- The Running Header (Switched) -->
+            <!-- Running Header -->
             <header>
                 <table class="header-table">
                     <tr>
@@ -195,30 +186,32 @@ if uploaded_docx is not None:
                 </table>
             </header>
             
-            <!-- The 3D Cover Page -->
+            <!-- Formal Government Cover Page -->
             <div class="cover-container">
-                <div class="cover-card">
-                    <div class="cover-logos">
-                        <!-- Switched: AMC Left, NTEP Right -->
-                        <img src="{amc_logo_b64}" class="logo-amc" alt="AMC Logo">
-                        <img src="{ntep_logo_b64}" class="logo-ntep" alt="NTEP Logo">
-                    </div>
-                    
-                    <div class="cover-title">
-                        Public Health<br>Action
-                    </div>
-                    <div class="cover-subtitle">
-                        National Tuberculosis Elimination Program<br>
-                        Ahmedabad Municipal Corporation
-                    </div>
-                    
-                    <div class="cover-footer">
-                        <strong>Operational Manual</strong> &copy; 2026
-                    </div>
+                <div class="cover-logos">
+                    <img src="{amc_logo_b64}" class="logo-amc" alt="AMC Logo">
+                    <img src="{ntep_logo_b64}" class="logo-ntep" alt="NTEP Logo">
+                </div>
+                
+                <div class="cover-department">
+                    Ahmedabad Municipal Corporation<br>
+                    National Tuberculosis Elimination Program
+                </div>
+                
+                <div class="cover-title">
+                    Public Health<br>Action
+                </div>
+                
+                <div class="cover-subtitle">
+                    Operational Guidelines
+                </div>
+                
+                <div class="cover-footer">
+                    Ahmedabad, Gujarat &copy; 2026
                 </div>
             </div>
             
-            <!-- The Extracted Word Document Content -->
+            <!-- Content -->
             <div class="content">
                 {str(soup)}
             </div>
@@ -231,7 +224,6 @@ if uploaded_docx is not None:
 
     st.success("Manual & Flipbook Generated Successfully!")
     
-    # PDF Download Button
     st.download_button(
         label="📄 Download Official PDF Manual",
         data=pdf_bytes,
@@ -242,39 +234,30 @@ if uploaded_docx is not None:
     st.markdown("---")
     st.header("📖 3D Interactive Flipbook")
 
-    # --- 3D FLIPBOOK INTEGRATION ---
-    # Convert PDF bytes to Base64 so it can be passed directly to the Flipbook JS library
     b64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
     pdf_data_uri = f"data:application/pdf;base64,{b64_pdf}"
 
-    # Embed DearFlip (3D PDF Flipbook Viewer) inside an iframe
     flipbook_html = f"""
     <!DOCTYPE html>
     <html>
     <head>
         <meta charset="utf-8">
-        <!-- Load DearFlip CSS -->
         <link href="https://cdn.jsdelivr.net/npm/dflip/css/dflip.min.css" rel="stylesheet">
         <link href="https://cdn.jsdelivr.net/npm/dflip/css/themify-icons.min.css" rel="stylesheet">
         <style>
             body {{ margin: 0; padding: 0; background-color: #f4f4f9; }}
-            /* Ensure the flipbook takes up the full iframe height */
             ._df_book {{ height: 100vh !important; }} 
         </style>
     </head>
     <body>
-        <!-- The Flipbook Container -->
         <div class="_df_book" webgl="true" backgroundcolor="#f4f4f9"
              source="{pdf_data_uri}" id="df_manual">
         </div>
-        
-        <!-- Load jQuery and DearFlip JS -->
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/dflip/js/dflip.min.js"></script>
     </body>
     </html>
     """
     
-    # Render the flipbook using Streamlit Components
     with st.spinner("Rendering 3D Flipbook Viewer..."):
         components.html(flipbook_html, height=750, scrolling=False)
