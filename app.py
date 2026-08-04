@@ -23,7 +23,7 @@ def get_image_base64(filepath):
 amc_logo_b64 = get_image_base64("Amdavad_Municipal_Corporation_logo.png")
 ntep_logo_b64 = get_image_base64("1-s2.0-S0019570720303152-gr1.jpg") 
 
-# 2. Load Heritage Background (Checks which one you uploaded)
+# 2. Load Heritage Background
 bg_image_b64 = ""
 possible_bgs = ["banner_sidi-saiyyad-jali_902.jpg", "riverfront.jpg", "image_e9f81d.jpg"]
 for bg in possible_bgs:
@@ -44,7 +44,7 @@ if uploaded_docx is not None:
             raw_html = result.value
         os.remove(tmp_docx_path) 
 
-    with st.spinner("Applying Classic Book Theme..."):
+    with st.spinner("Applying Perfect Government Alignment..."):
         soup = BeautifulSoup(raw_html, 'html.parser')
 
         full_html = f"""
@@ -63,35 +63,36 @@ if uploaded_docx is not None:
                 }}
                 
                 /* ----------------------------------------------------- */
-                /* 1. RUNNING HEADER (Absolute Positioning = Perfect)    */
+                /* 1. RUNNING HEADER (Matches PPT exactly)               */
                 /* ----------------------------------------------------- */
                 header {{ 
                     position: running(pageHeader); 
                     width: 100%;
-                    height: 70px;
-                    border-bottom: 2px solid #000;
-                    margin-bottom: 20px;
                 }}
                 
-                /* This forces the logos to the exact edges unconditionally */
-                .hdr-amc {{ position: absolute; left: 0; top: 0; height: 60px; max-width: 90px; object-fit: contain; }}
-                .hdr-ntep {{ position: absolute; right: 0; top: 0; height: 60px; max-width: 90px; object-fit: contain; }}
-                
-                .hdr-text {{ 
-                    text-align: center; 
-                    width: 100%; 
-                    padding-top: 20px; 
-                    font-size: 15px; 
-                    font-weight: bold; 
-                    color: #000; 
+                /* Invisible table to force left/right edge alignment */
+                .hdr-layout {{
+                    width: 100%;
+                    border: none !important;
+                    margin-top: -10px;
                 }}
+                .hdr-layout td {{
+                    vertical-align: middle;
+                    border: none !important; /* Removes ugly table borders in header */
+                    padding: 0;
+                }}
+                .h-left {{ text-align: left; width: 15%; }}
+                .h-center {{ text-align: center; width: 70%; font-size: 16px; font-weight: bold; color: #000; }}
+                .h-right {{ text-align: right; width: 15%; }}
+                
+                .hdr-logo {{ height: 60px; max-width: 90px; object-fit: contain; }}
 
                 /* ----------------------------------------------------- */
                 /* 2. PAGE SETTINGS                                      */
                 /* ----------------------------------------------------- */
                 @page {{
                     size: A4;
-                    margin: 3.5cm 2.5cm 2.5cm 2.5cm;
+                    margin: 3.5cm 2cm 2.5cm 2cm;
                     background-color: #ffffff; 
                     
                     @top-center {{ content: element(pageHeader); }}
@@ -113,12 +114,11 @@ if uploaded_docx is not None:
                     position: relative;
                     width: 21cm;
                     height: 29.7cm;
-                    background-color: #0A192F; /* Very dark, classic navy/slate */
+                    background-color: #0A192F; /* Very dark slate/navy */
                     overflow: hidden;
                     text-align: center;
                 }}
 
-                /* Blurred Heritage Background */
                 .cover-bg {{
                     position: absolute;
                     top: 0; left: 0; right: 0; bottom: 0;
@@ -126,15 +126,14 @@ if uploaded_docx is not None:
                     background-size: cover;
                     background-position: center;
                     filter: blur(5px);
-                    opacity: 0.15; /* Keeps it subtle so text is readable */
+                    opacity: 0.15; 
                     z-index: 1;
                 }}
 
-                /* Ornate Gold Border */
                 .cover-border {{
                     position: absolute;
                     top: 1.5cm; left: 1.5cm; right: 1.5cm; bottom: 1.5cm;
-                    border: 4px solid #D4AF37; /* Classic Gold */
+                    border: 4px solid #D4AF37; /* Gold */
                     outline: 1px solid #D4AF37;
                     outline-offset: -10px;
                     z-index: 2;
@@ -145,16 +144,23 @@ if uploaded_docx is not None:
                     box-sizing: border-box;
                 }}
 
-                /* Cover Logos */
                 .cover-logos {{
                     position: relative;
                     width: 100%;
                     height: 120px;
                 }}
-                .c-logo-amc {{ position: absolute; left: 0; top: 0; height: 110px; }}
-                .c-logo-ntep {{ position: absolute; right: 0; top: 0; height: 110px; }}
+                /* Added white background so AMC logo is visible on dark blue */
+                .c-logo-amc, .c-logo-ntep {{
+                    position: absolute; 
+                    top: 0; 
+                    height: 110px;
+                    background-color: #ffffff; 
+                    border-radius: 50%; 
+                    padding: 5px;
+                }}
+                .c-logo-amc {{ left: 0; }}
+                .c-logo-ntep {{ right: 0; }}
 
-                /* Title Block */
                 .cover-title-box {{
                     background-color: rgba(10, 25, 47, 0.85);
                     border: 2px solid #D4AF37;
@@ -199,24 +205,24 @@ if uploaded_docx is not None:
                 .content th, .content td {{ border: 1px solid #000; padding: 10px; text-align: left; }}
                 .content th {{ background-color: #f2f2f2; color: #000; font-weight: bold; text-align: center; }}
                 
-                /* Ensures highlighted text in Word stays highlighted in PDF */
-                mark {{ background-color: #FFFF00; color: #000; }}
-                
             </style>
         </head>
         <body>
-            <!-- Running Header -->
+            <!-- Perfect PPT-Style Header -->
             <header>
-                <img src="{amc_logo_b64}" class="hdr-amc" alt="AMC Logo">
-                <div class="hdr-text">રાષ્ટ્રીય ક્ષયરોગ નિવારણ કાર્યક્રમ (NTEP) - AMC</div>
-                <img src="{ntep_logo_b64}" class="hdr-ntep" alt="NTEP Logo">
+                <table class="hdr-layout">
+                    <tr>
+                        <td class="h-left"><img src="{amc_logo_b64}" class="hdr-logo" alt="AMC Logo"></td>
+                        <td class="h-center">રાષ્ટ્રીય ક્ષયરોગ નિવારણ કાર્યક્રમ (NTEP) - AMC</td>
+                        <td class="h-right"><img src="{ntep_logo_b64}" class="hdr-logo" alt="NTEP Logo"></td>
+                    </tr>
+                </table>
             </header>
             
             <!-- Classic Cover Page -->
             <div class="cover-page">
                 <div class="cover-bg"></div>
                 <div class="cover-border">
-                    
                     <div class="cover-logos">
                         <img src="{amc_logo_b64}" class="c-logo-amc" alt="AMC Logo">
                         <img src="{ntep_logo_b64}" class="c-logo-ntep" alt="NTEP Logo">
@@ -232,7 +238,6 @@ if uploaded_docx is not None:
                         Ahmedabad Municipal Corporation<br><br>
                         &copy; 2026
                     </div>
-                    
                 </div>
             </div>
             
