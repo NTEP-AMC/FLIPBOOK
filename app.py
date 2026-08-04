@@ -11,7 +11,6 @@ st.title("AMC NTEP - Official Booklet Generator")
 st.write("Upload your Gujarati Word document to generate a formatted PDF manual.")
 
 # --- Helper Function: Convert local image to Base64 ---
-# WeasyPrint works best with logos when they are embedded directly as base64 data
 def get_image_base64(filepath):
     if os.path.exists(filepath):
         with open(filepath, "rb") as image_file:
@@ -21,11 +20,9 @@ def get_image_base64(filepath):
     return ""
 
 # Read the logos you uploaded to GitHub
-# Replace these filenames if you rename them in your repository
 amc_logo_b64 = get_image_base64("Amdavad_Municipal_Corporation_logo.png")
-ntep_logo_b64 = get_image_base64("1-s2.0-S0019570720303152-gr1.jpg") # Assuming this is the NTEP logo
+ntep_logo_b64 = get_image_base64("1-s2.0-S0019570720303152-gr1.jpg") 
 
-# --- UI: File Upload ---
 uploaded_docx = st.file_uploader("Upload Content Word Document (.docx)", type=["docx"])
 
 if uploaded_docx is not None:
@@ -39,20 +36,19 @@ if uploaded_docx is not None:
             raw_html = result.value
         os.remove(tmp_docx_path) 
 
-    with st.spinner("Applying Government Manual Formatting..."):
+    with st.spinner("Applying Government Theme and Cover Page..."):
         soup = BeautifulSoup(raw_html, 'html.parser')
 
-        # Build the HTML with Gujarati Font and Fixed Header for Logos
+        # --- HTML & CSS Construction ---
         full_html = f"""
         <!DOCTYPE html>
         <html>
         <head>
             <meta charset="utf-8">
             <style>
-                /* Import Gujarati Font from Google Fonts */
                 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Gujarati:wght@400;700&display=swap');
                 
-                /* Base Booklet Styles */
+                /* Base Styles */
                 body {{ 
                     font-family: 'Noto Sans Gujarati', sans-serif; 
                     line-height: 1.6; 
@@ -60,64 +56,128 @@ if uploaded_docx is not None:
                     text-align: justify;
                 }}
                 
-                /* Page Layout & Margins */
+                /* ----------------------------------------------------- */
+                /* 1. RUNNING HEADER (For content pages only)            */
+                /* ----------------------------------------------------- */
+                header {{ 
+                    position: running(pageHeader); /* Turns this into a reusable element */
+                    width: 100%;
+                    border-bottom: 2px solid #004B87;
+                    padding-bottom: 10px;
+                    margin-bottom: 20px;
+                }}
+                .logo-left {{ float: left; height: 60px; max-width: 130px; object-fit: contain; }}
+                .logo-right {{ float: right; height: 60px; max-width: 130px; object-fit: contain; }}
+                .header-title {{ 
+                    text-align: center; 
+                    font-weight: bold; 
+                    padding-top: 15px; 
+                    font-size: 16px; 
+                    color: #004B87;
+                }}
+
+                /* ----------------------------------------------------- */
+                /* 2. PAGE SETTINGS (The Light Yellow Theme)             */
+                /* ----------------------------------------------------- */
                 @page {{
                     size: A4;
-                    /* Top margin is large (3.5cm) to make room for the fixed header logos */
                     margin: 3.5cm 2cm 2cm 2cm;
+                    background-color: #FFFAEC; /* Soft professional light yellow/cream */
+                    
+                    /* Inject the running header into the top margin */
+                    @top-center {{ content: element(pageHeader); }}
+                    
                     @bottom-center {{ 
                         content: counter(page); 
                         font-family: 'Arial', sans-serif;
                     }}
                 }}
-                
-                /* Fixed Header for Logos on EVERY Page */
-                header {{ 
-                    position: fixed; 
-                    top: -2.5cm; /* Push header up into the margin space */
-                    left: 0px; 
-                    right: 0px; 
-                    height: 2cm; 
-                    border-bottom: 2px solid #000;
-                    padding-bottom: 10px;
+
+                /* ----------------------------------------------------- */
+                /* 3. COVER PAGE DESIGN (Blue & Yellow)                  */
+                /* ----------------------------------------------------- */
+                /* Create a special 'named page' for the cover so it ignores margins and headers */
+                @page cover {{
+                    margin: 0cm; 
+                    background: linear-gradient(135deg, #004B87 60%, #FFC000 60%); /* Crisp Blue/Yellow diagonal split */
+                    @top-center {{ content: none; }} /* Hide header */
+                    @bottom-center {{ content: none; }} /* Hide page number */
                 }}
+
+                .cover-container {{
+                    page: cover; /* Apply the special page settings */
+                    page-break-after: always;
+                    height: 29.7cm; /* Full A4 height */
+                    text-align: center;
+                    color: white;
+                    font-family: 'Arial', sans-serif; /* English titles look better in Arial */
+                    padding-top: 6cm;
+                    box-sizing: border-box;
+                }}
+
+                .cover-logos {{ margin-bottom: 40px; }}
                 
-                .logo-left {{ float: left; height: 60px; max-width: 150px; object-fit: contain; }}
-                .logo-right {{ float: right; height: 60px; max-width: 150px; object-fit: contain; }}
-                
-                .header-title {{ 
-                    text-align: center; 
+                /* Add a white circle background to logos so they pop against the dark blue */
+                .cover-logos img {{ 
+                    height: 120px; 
+                    margin: 0 20px; 
+                    background-color: white; 
+                    padding: 15px; 
+                    border-radius: 50%; 
+                    box-shadow: 0px 4px 10px rgba(0,0,0,0.3);
+                }}
+
+                .cover-title {{ 
+                    font-size: 55px; 
                     font-weight: bold; 
-                    padding-top: 20px; 
-                    font-size: 16px; 
+                    text-transform: uppercase; 
+                    letter-spacing: 2px;
+                    margin-bottom: 10px;
+                    text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
                 }}
                 
-                /* Government Document Formatting */
-                h1, h2, h3 {{ color: #000; font-weight: bold; }}
-                h1 {{ 
-                    page-break-before: always; /* Start new modules on a new page */
-                    border-bottom: 1px solid #ccc; 
+                .cover-subtitle {{ 
+                    font-size: 24px; 
+                    margin-top: 80px; 
+                    color: #333; /* Dark text for the yellow portion of the background */
+                    font-weight: bold;
+                }}
+
+                /* ----------------------------------------------------- */
+                /* 4. CONTENT FORMATTING                                 */
+                /* ----------------------------------------------------- */
+                .content h1 {{ 
+                    page-break-before: always; 
+                    color: #004B87;
+                    border-bottom: 2px solid #FFC000; 
                     padding-bottom: 5px;
                 }}
-                
-                /* Ensure lists match the screenshots */
-                ul, ol {{ margin-left: 20px; padding-left: 10px; }}
-                li {{ margin-bottom: 8px; }}
-                
-                /* Fix tables for data */
-                table {{ width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 15px; }}
-                th, td {{ border: 1px solid #000; padding: 8px; text-align: left; }}
-                th {{ background-color: #f2f2f2; font-weight: bold; }}
+                .content h2, .content h3 {{ color: #333; font-weight: bold; }}
+                .content ul, .content ol {{ margin-left: 20px; padding-left: 10px; }}
+                .content li {{ margin-bottom: 8px; }}
+                .content table {{ width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 15px; }}
+                .content th, .content td {{ border: 1px solid #000; padding: 8px; text-align: left; background-color: white; }}
+                .content th {{ background-color: #004B87; color: white; font-weight: bold; }}
                 
             </style>
         </head>
         <body>
-            <!-- This header repeats on every page generated by WeasyPrint -->
+            <!-- The Running Header (Hidden on cover, visible on content pages) -->
             <header>
                 <img src="{ntep_logo_b64}" class="logo-left" alt="NTEP Logo">
                 <img src="{amc_logo_b64}" class="logo-right" alt="AMC Logo">
                 <div class="header-title">રાષ્ટ્રીય ક્ષયરોગ નિવારણ કાર્યક્રમ (NTEP) - AMC</div>
             </header>
+            
+            <!-- The Unique Front Cover -->
+            <div class="cover-container">
+                <div class="cover-logos">
+                    <img src="{ntep_logo_b64}" alt="NTEP Logo">
+                    <img src="{amc_logo_b64}" alt="AMC Logo">
+                </div>
+                <div class="cover-title">Public Health Action<br>NTEP</div>
+                <div class="cover-subtitle">Presented by<br>Ahmedabad Municipal Corporation</div>
+            </div>
             
             <!-- The Extracted Word Document Content -->
             <div class="content">
@@ -127,7 +187,7 @@ if uploaded_docx is not None:
         </html>
         """
 
-    with st.spinner("Generating PDF (This may take a moment to download fonts)..."):
+    with st.spinner("Generating PDF (Rendering design and fonts)..."):
         pdf_bytes = weasyprint.HTML(string=full_html).write_pdf()
 
     st.success("Manual Generated Successfully!")
