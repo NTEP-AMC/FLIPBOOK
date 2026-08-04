@@ -10,6 +10,7 @@ import os
 st.set_page_config(page_title="AMC NTEP Manual Generator", layout="wide")
 st.title("AMC NTEP - Official Booklet & Flipbook Generator")
 
+# --- Helper Function: Convert local image to Base64 ---
 def get_image_base64(filepath):
     if os.path.exists(filepath):
         with open(filepath, "rb") as image_file:
@@ -18,8 +19,17 @@ def get_image_base64(filepath):
             return f"data:{mime_type};base64,{encoded_string}"
     return ""
 
+# 1. Load Logos
 amc_logo_b64 = get_image_base64("Amdavad_Municipal_Corporation_logo.png")
 ntep_logo_b64 = get_image_base64("1-s2.0-S0019570720303152-gr1.jpg") 
+
+# 2. Load Heritage Background (Checks which one you uploaded)
+bg_image_b64 = ""
+possible_bgs = ["banner_sidi-saiyyad-jali_902.jpg", "riverfront.jpg", "image_e9f81d.jpg"]
+for bg in possible_bgs:
+    if os.path.exists(bg):
+        bg_image_b64 = get_image_base64(bg)
+        break
 
 uploaded_docx = st.file_uploader("Upload Content Word Document (.docx)", type=["docx"])
 
@@ -34,7 +44,7 @@ if uploaded_docx is not None:
             raw_html = result.value
         os.remove(tmp_docx_path) 
 
-    with st.spinner("Applying Official Government Theme..."):
+    with st.spinner("Applying Classic Book Theme..."):
         soup = BeautifulSoup(raw_html, 'html.parser')
 
         full_html = f"""
@@ -53,31 +63,31 @@ if uploaded_docx is not None:
                 }}
                 
                 /* ----------------------------------------------------- */
-                /* RUNNING HEADER (AMC Left, NTEP Right)                 */
+                /* 1. RUNNING HEADER (Absolute Positioning = Perfect)    */
                 /* ----------------------------------------------------- */
                 header {{ 
                     position: running(pageHeader); 
                     width: 100%;
+                    height: 70px;
+                    border-bottom: 2px solid #000;
                     margin-bottom: 20px;
                 }}
                 
-                .header-table {{ 
+                /* This forces the logos to the exact edges unconditionally */
+                .hdr-amc {{ position: absolute; left: 0; top: 0; height: 60px; max-width: 90px; object-fit: contain; }}
+                .hdr-ntep {{ position: absolute; right: 0; top: 0; height: 60px; max-width: 90px; object-fit: contain; }}
+                
+                .hdr-text {{ 
+                    text-align: center; 
                     width: 100%; 
-                    border-collapse: collapse; 
-                    border-bottom: 2px solid #000; 
+                    padding-top: 20px; 
+                    font-size: 15px; 
+                    font-weight: bold; 
+                    color: #000; 
                 }}
-                .header-table td {{ vertical-align: middle; padding-bottom: 10px; }}
-                
-                .header-left {{ width: 20%; text-align: left; }}
-                .header-left img {{ height: 65px; max-width: 100px; object-fit: contain; }}
-                
-                .header-center {{ width: 60%; text-align: center; font-weight: bold; font-size: 16px; color: #000; }}
-                
-                .header-right {{ width: 20%; text-align: right; }}
-                .header-right img {{ height: 65px; max-width: 100px; object-fit: contain; }}
 
                 /* ----------------------------------------------------- */
-                /* PAGE SETTINGS                                         */
+                /* 2. PAGE SETTINGS                                      */
                 /* ----------------------------------------------------- */
                 @page {{
                     size: A4;
@@ -89,125 +99,140 @@ if uploaded_docx is not None:
                 }}
 
                 /* ----------------------------------------------------- */
-                /* FORMAL GOVERNMENT COVER PAGE                          */
+                /* 3. CLASSIC CONSTITUTION-STYLE COVER PAGE              */
                 /* ----------------------------------------------------- */
                 @page cover {{
                     margin: 0cm; 
-                    background-color: #ffffff; 
                     @top-center {{ content: none; }} 
                     @bottom-center {{ content: none; }} 
                 }}
 
-                .cover-container {{
+                .cover-page {{
                     page: cover; 
                     page-break-after: always;
-                    height: 29.7cm; 
-                    width: 21cm;
-                    padding: 3cm; 
-                    box-sizing: border-box;
-                    font-family: 'Arial', sans-serif; 
-                    /* Thick, authoritative double border */
-                    border: 12px solid #004B87;
-                    outline: 2px solid #004B87;
-                    outline-offset: -20px;
-                    text-align: center;
                     position: relative;
+                    width: 21cm;
+                    height: 29.7cm;
+                    background-color: #0A192F; /* Very dark, classic navy/slate */
+                    overflow: hidden;
+                    text-align: center;
                 }}
 
-                .cover-logos {{ 
-                    width: 100%; 
-                    margin-top: 1cm;
-                    margin-bottom: 3cm; 
+                /* Blurred Heritage Background */
+                .cover-bg {{
+                    position: absolute;
+                    top: 0; left: 0; right: 0; bottom: 0;
+                    background-image: url('{bg_image_b64}');
+                    background-size: cover;
+                    background-position: center;
+                    filter: blur(5px);
+                    opacity: 0.15; /* Keeps it subtle so text is readable */
+                    z-index: 1;
                 }}
-                .logo-amc {{ float: left; height: 130px; }}
-                .logo-ntep {{ float: right; height: 130px; }}
-                .cover-logos::after {{ content: ""; clear: both; display: table; }}
 
-                .cover-department {{
-                    font-size: 22px;
-                    color: #333;
-                    text-transform: uppercase;
-                    margin-bottom: 2cm;
+                /* Ornate Gold Border */
+                .cover-border {{
+                    position: absolute;
+                    top: 1.5cm; left: 1.5cm; right: 1.5cm; bottom: 1.5cm;
+                    border: 4px solid #D4AF37; /* Classic Gold */
+                    outline: 1px solid #D4AF37;
+                    outline-offset: -10px;
+                    z-index: 2;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: space-between;
+                    padding: 2cm;
+                    box-sizing: border-box;
+                }}
+
+                /* Cover Logos */
+                .cover-logos {{
+                    position: relative;
+                    width: 100%;
+                    height: 120px;
+                }}
+                .c-logo-amc {{ position: absolute; left: 0; top: 0; height: 110px; }}
+                .c-logo-ntep {{ position: absolute; right: 0; top: 0; height: 110px; }}
+
+                /* Title Block */
+                .cover-title-box {{
+                    background-color: rgba(10, 25, 47, 0.85);
+                    border: 2px solid #D4AF37;
+                    padding: 40px 20px;
+                    margin: 1cm 0;
+                }}
+
+                .cover-title {{
+                    font-family: 'Georgia', serif;
+                    font-size: 50px;
                     font-weight: bold;
+                    color: #FFFFFF;
+                    text-transform: uppercase;
+                    letter-spacing: 2px;
+                    margin: 0;
+                    line-height: 1.3;
+                }}
+
+                .cover-subtitle {{
+                    font-family: 'Georgia', serif;
+                    font-size: 22px;
+                    color: #D4AF37;
+                    margin-top: 15px;
+                    text-transform: uppercase;
                     letter-spacing: 1px;
                 }}
 
-                .cover-title {{ 
-                    font-size: 55px; 
-                    font-weight: 900; 
-                    color: #000; 
-                    text-transform: uppercase; 
-                    border-top: 3px solid #004B87;
-                    border-bottom: 3px solid #004B87;
-                    padding: 30px 0;
-                    margin-bottom: 2cm;
-                    line-height: 1.2;
-                }}
-                
-                .cover-subtitle {{ 
-                    font-size: 26px; 
-                    color: #004B87; 
-                    font-weight: bold;
-                }}
-                
                 .cover-footer {{
-                    position: absolute;
-                    bottom: 3cm;
-                    left: 0;
-                    width: 100%;
-                    text-align: center;
+                    font-family: 'Georgia', serif;
                     font-size: 18px;
-                    font-weight: bold;
-                    color: #000;
+                    color: #FFFFFF;
                 }}
 
                 /* ----------------------------------------------------- */
-                /* CONTENT FORMATTING                                    */
+                /* 4. CONTENT FORMATTING                                 */
                 /* ----------------------------------------------------- */
                 .content h1 {{ page-break-before: always; color: #000; border-bottom: 2px solid #000; padding-bottom: 5px; margin-top: 0; }}
                 .content h2, .content h3 {{ color: #000; font-weight: bold; margin-top: 25px; }}
                 .content ul, .content ol {{ margin-left: 20px; padding-left: 10px; }}
                 .content li {{ margin-bottom: 8px; }}
                 .content table {{ width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 15px; }}
-                .content th, .content td {{ border: 1px solid #000; padding: 10px; text-align: left; background-color: white; }}
+                .content th, .content td {{ border: 1px solid #000; padding: 10px; text-align: left; }}
                 .content th {{ background-color: #f2f2f2; color: #000; font-weight: bold; text-align: center; }}
+                
+                /* Ensures highlighted text in Word stays highlighted in PDF */
+                mark {{ background-color: #FFFF00; color: #000; }}
                 
             </style>
         </head>
         <body>
             <!-- Running Header -->
             <header>
-                <table class="header-table">
-                    <tr>
-                        <td class="header-left"><img src="{amc_logo_b64}" alt="AMC Logo"></td>
-                        <td class="header-center">રાષ્ટ્રીય ક્ષયરોગ નિવારણ કાર્યક્રમ (NTEP) - AMC</td>
-                        <td class="header-right"><img src="{ntep_logo_b64}" alt="NTEP Logo"></td>
-                    </tr>
-                </table>
+                <img src="{amc_logo_b64}" class="hdr-amc" alt="AMC Logo">
+                <div class="hdr-text">રાષ્ટ્રીય ક્ષયરોગ નિવારણ કાર્યક્રમ (NTEP) - AMC</div>
+                <img src="{ntep_logo_b64}" class="hdr-ntep" alt="NTEP Logo">
             </header>
             
-            <!-- Formal Government Cover Page -->
-            <div class="cover-container">
-                <div class="cover-logos">
-                    <img src="{amc_logo_b64}" class="logo-amc" alt="AMC Logo">
-                    <img src="{ntep_logo_b64}" class="logo-ntep" alt="NTEP Logo">
-                </div>
-                
-                <div class="cover-department">
-                    Ahmedabad Municipal Corporation<br>
-                    National Tuberculosis Elimination Program
-                </div>
-                
-                <div class="cover-title">
-                    Public Health<br>Action
-                </div>
-                
-                <div class="cover-subtitle">
-                    Operational Guidelines
-                </div>
-                
-                <div class="cover-footer">
-                    Ahmedabad, Gujarat &copy; 2026
+            <!-- Classic Cover Page -->
+            <div class="cover-page">
+                <div class="cover-bg"></div>
+                <div class="cover-border">
+                    
+                    <div class="cover-logos">
+                        <img src="{amc_logo_b64}" class="c-logo-amc" alt="AMC Logo">
+                        <img src="{ntep_logo_b64}" class="c-logo-ntep" alt="NTEP Logo">
+                    </div>
+                    
+                    <div class="cover-title-box">
+                        <div class="cover-title">Public Health<br>Action</div>
+                        <div class="cover-subtitle">Operational Manual</div>
+                    </div>
+                    
+                    <div class="cover-footer">
+                        National Tuberculosis Elimination Program<br>
+                        Ahmedabad Municipal Corporation<br><br>
+                        &copy; 2026
+                    </div>
+                    
                 </div>
             </div>
             
