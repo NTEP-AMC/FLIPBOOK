@@ -23,13 +23,16 @@ def get_image_base64(filepath):
 amc_logo_b64 = get_image_base64("Amdavad_Municipal_Corporation_logo.png")
 ntep_logo_b64 = get_image_base64("1-s2.0-S0019570720303152-gr1.jpg") 
 
-# 2. Load Heritage Background
+# 2. Load Heritage Background (Safely)
 bg_image_b64 = ""
 possible_bgs = ["banner_sidi-saiyyad-jali_902.jpg", "riverfront.jpg", "image_e9f81d.jpg"]
 for bg in possible_bgs:
     if os.path.exists(bg):
         bg_image_b64 = get_image_base64(bg)
         break
+
+# Safely construct the CSS for the background only if it exists
+bg_css_rule = f"background-image: url('{bg_image_b64}');" if bg_image_b64 else "background-color: transparent;"
 
 uploaded_docx = st.file_uploader("Upload Content Word Document (.docx)", type=["docx"])
 
@@ -53,7 +56,7 @@ if uploaded_docx is not None:
         <head>
             <meta charset="utf-8">
             <style>
-                @import url('[https://fonts.googleapis.com/css2?family=Noto+Sans+Gujarati:wght@400;700&display=swap](https://fonts.googleapis.com/css2?family=Noto+Sans+Gujarati:wght@400;700&display=swap)');
+                @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Gujarati:wght@400;700&display=swap');
                 
                 body {{ 
                     font-family: 'Noto Sans Gujarati', sans-serif; 
@@ -127,7 +130,7 @@ if uploaded_docx is not None:
                 .cover-bg {{
                     position: absolute;
                     top: 0; left: 0; right: 0; bottom: 0;
-                    background-image: url('{bg_image_b64}');
+                    {bg_css_rule}
                     background-size: cover;
                     background-position: center;
                     filter: blur(5px);
@@ -135,6 +138,7 @@ if uploaded_docx is not None:
                     z-index: 1;
                 }}
 
+                /* Using Padding instead of Absolute Positioning keeps logos inside */
                 .cover-border {{
                     position: relative;
                     width: 100%; 
@@ -224,6 +228,7 @@ if uploaded_docx is not None:
                 <div class="cover-bg"></div>
                 <div class="cover-border">
                     
+                    <!-- Logos Table inside the Border ensures they never bleed out -->
                     <table class="cover-logos-table">
                         <tr>
                             <td style="text-align: left;"><img src="{amc_logo_b64}" class="c-logo" alt="AMC Logo"></td>
@@ -254,7 +259,8 @@ if uploaded_docx is not None:
         """
 
     with st.spinner("Generating High-Quality PDF..."):
-        pdf_bytes = weasyprint.HTML(string=full_html).write_pdf()
+        # Added base_url="." to prevent Weasyprint from crashing on empty URLs
+        pdf_bytes = weasyprint.HTML(string=full_html, base_url=".").write_pdf()
 
     st.success("Manual & Flipbook Generated Successfully!")
     
@@ -276,8 +282,8 @@ if uploaded_docx is not None:
     <html>
     <head>
         <meta charset="utf-8">
-        <link href="[https://cdn.jsdelivr.net/npm/dflip/css/dflip.min.css](https://cdn.jsdelivr.net/npm/dflip/css/dflip.min.css)" rel="stylesheet">
-        <link href="[https://cdn.jsdelivr.net/npm/dflip/css/themify-icons.min.css](https://cdn.jsdelivr.net/npm/dflip/css/themify-icons.min.css)" rel="stylesheet">
+        <link href="https://cdn.jsdelivr.net/npm/dflip/css/dflip.min.css" rel="stylesheet">
+        <link href="https://cdn.jsdelivr.net/npm/dflip/css/themify-icons.min.css" rel="stylesheet">
         <style>
             body {{ margin: 0; padding: 0; background-color: #f4f4f9; }}
             ._df_book {{ height: 100vh !important; }} 
@@ -287,11 +293,15 @@ if uploaded_docx is not None:
         <div class="_df_book" webgl="true" backgroundcolor="#f4f4f9"
              source="{pdf_data_uri}" id="df_manual">
         </div>
-        <script src="[https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js](https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js)"></script>
-        <script src="[https://cdn.jsdelivr.net/npm/dflip/js/dflip.min.js](https://cdn.jsdelivr.net/npm/dflip/js/dflip.min.js)"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/dflip/js/dflip.min.js"></script>
     </body>
     </html>
     """
     
     with st.spinner("Rendering 3D Flipbook Viewer..."):
         components.html(flipbook_html, height=750, scrolling=False)
+
+
+
+        
