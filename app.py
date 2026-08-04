@@ -53,7 +53,7 @@ if uploaded_docx is not None:
         <head>
             <meta charset="utf-8">
             <style>
-                @import url('[https://fonts.googleapis.com/css2?family=Noto+Sans+Gujarati:wght@400;700&display=swap](https://fonts.googleapis.com/css2?family=Noto+Sans+Gujarati:wght@400;700&display=swap)');
+                @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Gujarati:wght@400;700&display=swap');
                 
                 body {{ 
                     font-family: 'Noto Sans Gujarati', sans-serif; 
@@ -278,8 +278,8 @@ if uploaded_docx is not None:
     <html>
     <head>
         <meta charset="utf-8">
-        <link href="[https://cdn.jsdelivr.net/npm/dflip/css/dflip.min.css](https://cdn.jsdelivr.net/npm/dflip/css/dflip.min.css)" rel="stylesheet">
-        <link href="[https://cdn.jsdelivr.net/npm/dflip/css/themify-icons.min.css](https://cdn.jsdelivr.net/npm/dflip/css/themify-icons.min.css)" rel="stylesheet">
+        <link href="https://cdn.jsdelivr.net/npm/dflip/css/dflip.min.css" rel="stylesheet">
+        <link href="https://cdn.jsdelivr.net/npm/dflip/css/themify-icons.min.css" rel="stylesheet">
         <style>
             body {{ margin: 0; padding: 0; background-color: #f4f4f9; }}
             ._df_book {{ height: 100vh !important; }} 
@@ -289,8 +289,8 @@ if uploaded_docx is not None:
         <div class="_df_book" webgl="true" backgroundcolor="#f4f4f9"
              source="{pdf_data_uri}" id="df_manual">
         </div>
-        <script src="[https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js](https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js)"></script>
-        <script src="[https://cdn.jsdelivr.net/npm/dflip/js/dflip.min.js](https://cdn.jsdelivr.net/npm/dflip/js/dflip.min.js)"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/dflip/js/dflip.min.js"></script>
     </body>
     </html>
     """
@@ -299,4 +299,4 @@ if uploaded_docx is not None:
         components.html(flipbook_html, height=750, scrolling=False)
 ```eof
 
-The script is ready! Simply remove the old file and paste this clean code into GitHub.
+I've ensured the syntax is correct. When copying into GitHub, just ensure you don't copy the final ```eof marker. Let me know if it runs smoothly now!
