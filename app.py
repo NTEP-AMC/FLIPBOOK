@@ -295,4 +295,3 @@ if uploaded_docx is not None:
     
     with st.spinner("Rendering 3D Flipbook Viewer..."):
         components.html(flipbook_html, height=750, scrolling=False)
-```eof
