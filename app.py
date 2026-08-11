@@ -1,80 +1,100 @@
 import streamlit as st
 import docx
 from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE_TYPE
 import io
+import re
 
-st.set_page_config(page_title="AMC NTEP PPT Generator", layout="wide")
-st.title("AMC NTEP - Template-Based Infographic Generator")
-st.markdown("""
-**Instructions:**
-1. Upload your designed **PowerPoint Template (.pptx)** containing placeholders like `{{OBJ_1.1}}`, `{{WHO_1.1}}`.
-2. Upload your **Word Document (.docx)** containing the data.
-3. The app will inject the text directly into your beautiful graphics!
-""")
+st.set_page_config(page_title="AMC NTEP - Template Injector", layout="wide")
+st.title("AMC NTEP - Bulletproof Template Injector")
 
-# --- Helper Function: Extract Data from Word ---
-def extract_data_from_word(docx_file):
+# --- 1. Advanced Word Parser ---
+def parse_word_to_placeholders(docx_file):
     """
-    Reads the Word document and extracts data to map to placeholders.
-    (This is a simplified mapper. You can adjust the keys based on your actual Word format).
+    Scans the Word doc and creates a dictionary of placeholders automatically.
+    Example output: {'{{OBJ_1.1}}': 'શંકાસ્પદ TB દર્દીની...', '{{STEPS_1.1}}': 'લક્ષણો તપાસો...'}
     """
     doc = docx.Document(docx_file)
-    extracted_data = {}
-    
+    data = {}
+    current_sub = None
     current_key = None
+
     for para in doc.paragraphs:
         text = para.text.strip()
         if not text:
             continue
+
+        # Detect Sub-module (e.g., "1.1 Presumptive TB...")
+        match = re.match(r'^(\d+\.\d+)', text)
+        if match:
+            current_sub = match.group(1) # Grabs "1.1", "1.2", etc.
+            data[f"{{{{TITLE_{current_sub}}}}}"] = text
+            current_key = None
+            continue
+
+        if not current_sub:
+            continue
+
+        # Detect Sections and create corresponding tags
+        if text.startswith("ઉદ્દેશ્ય"):
+            current_key = f"{{{{OBJ_{current_sub}}}}}"
+            data[current_key] = text.replace("ઉદ્દેશ્ય (Objective):", "").strip()
             
-        # Example logic to map Word text to PPTX placeholders
-        # In a real scenario, you might use regex to find sections like "ઉદ્દેશ્ય (Objective):"
-        if "1.1 Presumptive TB" in text:
-            current_key = "1.1"
-        elif text.startswith("ઉદ્દેશ્ય"):
-            extracted_data[f"{{{{OBJ_{current_key}}}}}"] = text.replace("ઉદ્દેશ્ય (Objective):", "").strip()
         elif text.startswith("શું કરવું?"):
-            extracted_data[f"{{{{STEPS_{current_key}}}}}"] = text.replace("શું કરવું? (What to do?):", "").strip()
+            current_key = f"{{{{STEPS_{current_sub}}}}}"
+            data[current_key] = text.replace("શું કરવું? (What to do?):", "").strip()
+            
         elif text.startswith("જવાબદાર વ્યક્તિ"):
-            extracted_data[f"{{{{WHO_{current_key}}}}}"] = text.replace("જવાબદાર વ્યક્તિ (Responsible Person):", "").strip()
-        elif text.startswith("મોનિટરિંગ"):
-            extracted_data[f"{{{{IND_{current_key}}}}}"] = text.replace("મોનિટરિંગ સૂચકાંકો (Monitoring Indicators):", "").strip()
+            current_key = f"{{{{WHO_{current_sub}}}}}"
+            data[current_key] = text.replace("જવાબદાર વ્યક્તિ (Responsible Person):", "").strip()
+            
+        elif text.startswith("સમયમર્યાદા") or text.startswith("અમલીકરણનો સમય"):
+            current_key = f"{{{{TIME_{current_sub}}}}}"
+            data[current_key] = text.replace("સમયમર્યાદા (Timeline):", "").replace("અમલીકરણનો સમય / ક્યારે કરવું? (Trigger):", "").strip()
+            
+        elif text.startswith("મોનિટરિંગ સૂચકાંકો"):
+            current_key = f"{{{{IND_{current_sub}}}}}"
+            data[current_key] = text.replace("મોનિટરિંગ સૂચકાંકો (Monitoring Indicators):", "").strip()
+            
+        elif current_key:
+            # If we are under a key, append the next lines to it (for multi-line steps)
+            data[current_key] += f"\n{text}"
 
-    return extracted_data
+    return data
 
-# --- Helper Function: Inject Text into Template ---
-def inject_text_to_ppt(template_file, replacements):
+# --- 2. Bulletproof Shape Scanner ---
+def replace_text_in_shapes(shapes, replacements):
     """
-    Scans every slide and every shape in the PPTX. 
-    If it finds a placeholder (e.g., {{OBJ_1.1}}), it replaces it with the Word doc text
-    while preserving your custom font, size, and colors.
+    Recursively digs through shapes (even Grouped infographics) and safely 
+    overwrites placeholders while preserving your PowerPoint's custom fonts/colors.
     """
-    prs = Presentation(template_file)
-    
-    for slide in prs.slides:
-        for shape in slide.shapes:
-            if not shape.has_text_frame:
-                continue
-                
+    for shape in shapes:
+        # If it's a grouped graphic, dig inside it recursively
+        if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
+            replace_text_in_shapes(shape.shapes, replacements)
+            
+        # If it holds text, check for placeholders
+        elif shape.has_text_frame:
             for paragraph in shape.text_frame.paragraphs:
-                for run in paragraph.runs:
-                    for key, value in replacements.items():
-                        if key in run.text:
-                            # Replace the placeholder with the actual Gujarati text
-                            run.text = run.text.replace(key, value)
-
-    # Save to memory buffer
-    ppt_io = io.BytesIO()
-    prs.save(ppt_io)
-    ppt_io.seek(0)
-    return ppt_io
+                for key, value in replacements.items():
+                    if key in paragraph.text:
+                        # FOUND IT! We do a paragraph-level replacement to fix the "split run" bug.
+                        new_text = paragraph.text.replace(key, str(value))
+                        
+                        if len(paragraph.runs) > 0:
+                            first_run = paragraph.runs[0]
+                            # Erase all existing split blocks
+                            for run in paragraph.runs:
+                                run.text = ""
+                            # Put the complete new text into the first block to preserve original formatting
+                            first_run.text = new_text
 
 # --- Streamlit UI ---
 col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("1. Upload PPTX Template")
-    uploaded_template = st.file_uploader("Upload your blank designed template (.pptx)", type=["pptx"])
+    uploaded_template = st.file_uploader("Upload PPTX containing {{TAGS}}", type=["pptx"])
 
 with col2:
     st.subheader("2. Upload Content")
@@ -82,19 +102,31 @@ with col2:
 
 if uploaded_template and uploaded_docx:
     if st.button("Generate Final Presentation", type="primary"):
-        with st.spinner("Extracting content from Word..."):
-            # 1. Parse the Word document
-            replacements = extract_data_from_word(uploaded_docx)
+        
+        with st.spinner("Extracting content and building tags..."):
+            replacements = parse_word_to_placeholders(uploaded_docx)
             
-        with st.spinner("Injecting text into your graphic template..."):
-            # 2. Inject into PPTX
-            final_ppt = inject_text_to_ppt(uploaded_template, replacements)
+            # Show the user what tags were successfully created
+            with st.expander("🔍 View Generated Tags (Debug Check)"):
+                st.write(replacements)
             
-        st.success("Perfect Graphic Presentation Generated Successfully!")
+        with st.spinner("Deep scanning PPTX and injecting Gujarati text..."):
+            prs = Presentation(uploaded_template)
+            
+            # Process every slide
+            for slide in prs.slides:
+                replace_text_in_shapes(slide.shapes, replacements)
+                
+            # Save to memory
+            ppt_io = io.BytesIO()
+            prs.save(ppt_io)
+            ppt_io.seek(0)
+            
+        st.success("✅ Infographic Injection Complete! No empty templates this time.")
         
         st.download_button(
-            label="📄 Download Exact Infographic PPTX",
-            data=final_ppt,
+            label="📄 Download Perfect PPTX",
+            data=ppt_io,
             file_name="AMC_NTEP_Final_Infographic.pptx",
             mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
         )
