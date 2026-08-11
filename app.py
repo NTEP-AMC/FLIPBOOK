@@ -33,8 +33,10 @@ HIGHLIGHT_BG = RGBColor(0xC9, 0xF3, 0xEE)
 HIGHLIGHT_TEXT = RGBColor(0x0B, 0x6E, 0x5D)
 
 FONT = "Noto Sans Gujarati"
-FONT_TTF_REGULAR = "/usr/share/fonts/truetype/noto/NotoSansGujarati-Regular.ttf"
-FONT_TTF_BOLD = "/usr/share/fonts/truetype/noto/NotoSansGujarati-Bold.ttf"
+
+# FIXED: Changed from absolute Linux paths to relative paths
+FONT_TTF_REGULAR = "NotoSansGujarati-Regular.ttf"
+FONT_TTF_BOLD = "NotoSansGujarati-Bold.ttf"
 MEASURE_DPI = 96
 
 SLIDE_W = Inches(13.333)
@@ -128,12 +130,16 @@ def parse_word(docx_file):
 # ----------------------------------------------------------------------
 _FONT_CACHE = {}
 
-
+# FIXED: Added try-except fallback to prevent OSError on Streamlit Cloud
 def _pil_font(size_pt, bold=False):
     key = (round(size_pt, 1), bold)
     if key not in _FONT_CACHE:
         path = FONT_TTF_BOLD if bold else FONT_TTF_REGULAR
-        _FONT_CACHE[key] = ImageFont.truetype(path, max(1, int(size_pt / 72 * MEASURE_DPI)))
+        try:
+            _FONT_CACHE[key] = ImageFont.truetype(path, max(1, int(size_pt / 72 * MEASURE_DPI)))
+        except OSError:
+            # Fallback if the font files are not found in the directory
+            _FONT_CACHE[key] = ImageFont.load_default()
     return _FONT_CACHE[key]
 
 
@@ -144,7 +150,13 @@ def wrap_text(text, size_pt, max_width_in):
     lines, cur = [], ""
     for w in words:
         trial = (cur + " " + w).strip()
-        if font.getlength(trial) <= max_width_px or not cur:
+        # Fallback handling: getlength might not exist on load_default() in older PIL versions
+        try:
+            length = font.getlength(trial)
+        except AttributeError:
+            length = font.getsize(trial)[0]
+            
+        if length <= max_width_px or not cur:
             cur = trial
         else:
             lines.append(cur)
@@ -297,10 +309,10 @@ def icon_clock(slide, x, y, d, color):
     add_oval(slide, x, y, d, color)
     cx, cy = x + d // 2, y + d // 2
     hand1 = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, cx - int(d * 0.035), cy - int(d * 0.33),
-                                    int(d * 0.07), int(d * 0.33))
+                                   int(d * 0.07), int(d * 0.33))
     hand1.fill.solid(); hand1.fill.fore_color.rgb = WHITE; hand1.line.fill.background(); hand1.shadow.inherit = False
     hand2 = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, cx - int(d * 0.035), cy - int(d * 0.24),
-                                    int(d * 0.07), int(d * 0.24))
+                                   int(d * 0.07), int(d * 0.24))
     hand2.fill.solid(); hand2.fill.fore_color.rgb = WHITE; hand2.line.fill.background(); hand2.shadow.inherit = False
     hand2.rotation = 90
 
@@ -335,7 +347,7 @@ def draw_card(slide, x, y, w, h, field_key, size_pt, items, highlight=False, lab
     label_x = x + pad + icon_d + Inches(0.12)
     label_w = w - pad - icon_d - Inches(0.12) - pad
     add_text(slide, label_x, y + pad - Inches(0.02), label_w, icon_d,
-              label_override or meta["label"], 12, NAVY, bold=True, anchor=MSO_ANCHOR.MIDDLE)
+             label_override or meta["label"], 12, NAVY, bold=True, anchor=MSO_ANCHOR.MIDDLE)
 
     body_y = y + pad + icon_d + Inches(0.10)
     body_w = w - 2 * pad
@@ -375,11 +387,11 @@ def draw_header(slide, module_num, module_title, sub_title, continued, logos):
 
     header_text_w = SLIDE_W - text_left - text_right_pad
     add_text(slide, text_left, Inches(0.14), header_text_w, Inches(0.3),
-              f"Module {module_num} \u2022 {module_title}".strip(" \u2022"),
-              13, RGBColor(0xB9, 0xD3, 0xF2))
+             f"Module {module_num} \u2022 {module_title}".strip(" \u2022"),
+             13, RGBColor(0xB9, 0xD3, 0xF2))
     title = sub_title + ("  \u2014  \u091a\u093e\u0932\u0941" if continued else "")
     add_text(slide, text_left, Inches(0.48), header_text_w, Inches(0.68),
-              title, 23, WHITE, bold=True, anchor=MSO_ANCHOR.MIDDLE)
+             title, 23, WHITE, bold=True, anchor=MSO_ANCHOR.MIDDLE)
 
 
 def build_submodule_slides(prs, module_num, module_title, sub_num, sub, logos):
