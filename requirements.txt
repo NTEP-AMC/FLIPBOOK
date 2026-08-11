@@ -2,3 +2,5 @@ streamlit
 mammoth
 weasyprint
 beautifulsoup4
+python-docx
+python-pptx
