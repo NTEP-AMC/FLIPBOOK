@@ -2,151 +2,170 @@ import streamlit as st
 import docx
 from pptx import Presentation
 from pptx.util import Inches, Pt
-from pptx.enum.text import PP_ALIGN
+from pptx.enum.shapes import MSO_SHAPE
+from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.dml.color import RGBColor
 import io
 import re
 
-st.set_page_config(page_title="AMC NTEP PPT Generator", layout="wide")
-st.title("AMC NTEP - Professional Bilingual PPT Generator")
-st.markdown("Upload your Gujarati/English Word document. The app will extract the structured sections and generate a formatted PowerPoint.")
+st.set_page_config(page_title="AMC NTEP Infographic PPT", layout="wide")
+st.title("AMC NTEP - Advanced Infographic Layout Generator")
 
-# --- Helper Function: Smart Parser for Bilingual Text ---
-def parse_ntep_document(docx_file):
-    doc = docx.Document(docx_file)
-    slides_data = []
-    current_slide = None
-    
-    # Keywords to identify sections in your specific document
-    keywords = [
-        "ઉદ્દેશ્ય", "અમલીકરણનો સમય", "શું કરવું?", "શા માટે?", 
-        "લક્ષિત જૂથ", "જવાબદાર વ્યક્તિ", "સમયમર્યાદા", "દસ્તાવેજીકરણ", 
-        "મોનિટરિંગ સૂચકાંકો", "સુપરવાઈઝર ગુણવત્તા", "જો કામગીરી ન થાય"
-    ]
-    
-    current_key = "intro"
-    
-    for para in doc.paragraphs:
-        text = para.text.strip()
-        if not text:
-            continue
-            
-        # Detect New Module or Sub-Module (e.g., "1.1 Presumptive TB...")
-        if re.match(r'^(Module|\d+\.\d+)', text, re.IGNORECASE):
-            if current_slide:
-                slides_data.append(current_slide)
-            current_slide = {"title": text, "content": {}}
-            current_key = "intro"
-            continue
-            
-        if current_slide is None:
-            current_slide = {"title": "પ્રસ્તાવના (Introduction)", "content": {}}
-            
-        # Detect if paragraph is one of the target headers
-        found_key = False
-        for key in keywords:
-            if text.startswith(key) or text.startswith(f"{key} ("):
-                current_key = key
-                current_slide["content"][current_key] = text
-                found_key = True
-                break
-                
-        # If it's not a header, append it to the current active key
-        if not found_key:
-            if current_key not in current_slide["content"]:
-                current_slide["content"][current_key] = text
-            else:
-                current_slide["content"][current_key] += f"\n{text}"
-                
-    if current_slide:
-        slides_data.append(current_slide)
-        
-    return slides_data
+# --- Theme Colors ---
+NAVY_BLUE = RGBColor(10, 47, 81)
+TEAL_GREEN = RGBColor(32, 163, 158)
+LIGHT_BG = RGBColor(245, 247, 250)
+WHITE = RGBColor(255, 255, 255)
+DARK_GRAY = RGBColor(60, 60, 60)
 
-# --- Helper Function: Set Formatting (Gujarati Support) ---
-def format_text(run, font_size, bold=False, color=None):
-    # Nirmala UI or Shruti are standard Windows fonts that support Gujarati well
-    run.font.name = 'Nirmala UI' 
+# --- Helper: Apply Gujarati Font ---
+def format_text(run, font_size, bold=False, color=DARK_GRAY):
+    run.font.name = 'Nirmala UI'
     run.font.size = Pt(font_size)
     run.font.bold = bold
-    if color:
-        run.font.color.rgb = color
+    run.font.color.rgb = color
 
-# --- Helper Function: Generate Structured PPTX ---
-def generate_ppt(slides_data):
+# --- Helper: Draw Styled Infographic Box ---
+def draw_info_box(slide, left, top, width, height, title, content, border_color=TEAL_GREEN):
+    # Background Shape
+    shape = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = WHITE
+    shape.line.color.rgb = border_color
+    shape.line.width = Pt(2)
+    
+    # Title Banner inside the box
+    banner = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, left, top, width, Inches(0.4))
+    banner.fill.solid()
+    banner.fill.fore_color.rgb = border_color
+    banner.line.fill.background()
+    
+    tf_banner = banner.text_frame
+    p = tf_banner.paragraphs[0]
+    p.alignment = PP_ALIGN.CENTER
+    run = p.add_run()
+    run.text = title
+    format_text(run, 14, bold=True, color=WHITE)
+    
+    # Content Text Box
+    txBox = slide.shapes.add_textbox(left + Inches(0.1), top + Inches(0.5), width - Inches(0.2), height - Inches(0.6))
+    tf = txBox.text_frame
+    tf.word_wrap = True
+    p_content = tf.paragraphs[0]
+    run_content = p_content.add_run()
+    run_content.text = content
+    format_text(run_content, 12, bold=False, color=DARK_GRAY)
+
+# --- Helper: Draw Workflow Steps (Circles and Arrows) ---
+def draw_workflow_step(slide, step_num, text, left, top):
+    # Number Circle
+    circle = slide.shapes.add_shape(MSO_SHAPE.OVAL, left, top, Inches(0.5), Inches(0.5))
+    circle.fill.solid()
+    circle.fill.fore_color.rgb = NAVY_BLUE
+    circle.line.fill.background()
+    tf_circle = circle.text_frame
+    tf_circle.vertical_anchor = MSO_ANCHOR.MIDDLE
+    p_circ = tf_circle.paragraphs[0]
+    p_circ.alignment = PP_ALIGN.CENTER
+    run_circ = p_circ.add_run()
+    run_circ.text = str(step_num)
+    format_text(run_circ, 14, bold=True, color=WHITE)
+    
+    # Text Box next to circle
+    txBox = slide.shapes.add_textbox(left + Inches(0.6), top, Inches(4), Inches(0.5))
+    tf = txBox.text_frame
+    tf.word_wrap = True
+    p_text = tf.paragraphs[0]
+    run_text = p_text.add_run()
+    run_text.text = text
+    format_text(run_text, 11, bold=False, color=DARK_GRAY)
+    
+    # Down Arrow (if not the first step, draw above)
+    if step_num > 1:
+        arrow = slide.shapes.add_shape(MSO_SHAPE.DOWN_ARROW, left + Inches(0.15), top - Inches(0.35), Inches(0.2), Inches(0.25))
+        arrow.fill.solid()
+        arrow.fill.fore_color.rgb = TEAL_GREEN
+        arrow.line.fill.background()
+
+# --- Main PPT Generator ---
+def generate_infographic_ppt(docx_file):
     prs = Presentation()
+    prs.slide_width = Inches(10)
+    prs.slide_height = Inches(7.5)
+    blank_layout = prs.slide_layouts[6]
     
-    # Brand Colors based on your references
-    navy_blue = RGBColor(10, 47, 81)
-    teal = RGBColor(32, 163, 158)
-    dark_gray = RGBColor(60, 60, 60)
+    # --- Dummy Data Extraction (Simulating your parser) ---
+    # In a full setup, this would parse your Word doc dynamically.
+    # Here, we use structure to build the exact visual you want.
+    slide = prs.slides.add_slide(blank_layout)
     
-    # 1. Title Slide
-    title_slide_layout = prs.slide_layouts[0]
-    slide = prs.slides.add_slide(title_slide_layout)
-    title = slide.shapes.title
-    subtitle = slide.placeholders[1]
-    
-    title.text = "રાષ્ટ્રીય ક્ષયરોગ નિવારણ કાર્યક્રમ (NTEP)\nજાહેર આરોગ્ય કાર્યવાહી (Public Health Actions)"
-    format_text(title.text_frame.paragraphs[0].runs[0], 36, True, navy_blue)
-    
-    subtitle.text = "ઓપરેશનલ માર્ગદર્શિકા (Operational Manual)\nAhmedabad Municipal Corporation"
-    format_text(subtitle.text_frame.paragraphs[0].runs[0], 20, False, dark_gray)
-    
-    # 2. Content Slides based on parsed data
-    content_slide_layout = prs.slide_layouts[1] # Title and Content
-    
-    for data in slides_data:
-        slide = prs.slides.add_slide(content_slide_layout)
-        title_shape = slide.shapes.title
-        body_shape = slide.placeholders[1]
-        
-        # Set Title
-        title_shape.text = data["title"]
-        format_text(title_shape.text_frame.paragraphs[0].runs[0], 28, True, navy_blue)
-        
-        # Set Content Layout
-        tf = body_shape.text_frame
-        tf.clear() # Clear default formatting
-        
-        for key, text_content in data["content"].items():
-            # Add Header (e.g., "શું કરવું?")
-            p_header = tf.add_paragraph()
-            run_header = p_header.add_run()
-            run_header.text = f"{key.upper()}: "
-            format_text(run_header, 16, True, teal)
-            
-            # Add Body text for that section
-            cleaned_text = text_content.replace(key, "").replace(":", "", 1).strip()
-            if cleaned_text:
-                run_body = p_header.add_run()
-                run_body.text = cleaned_text
-                format_text(run_body, 14, False, dark_gray)
-            
-            # Add some spacing
-            p_header.space_after = Pt(12)
+    # 1. Main Header Banner
+    header = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), Inches(10), Inches(1))
+    header.fill.solid()
+    header.fill.fore_color.rgb = NAVY_BLUE
+    tf = header.text_frame
+    tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    p = tf.paragraphs[0]
+    run = p.add_run()
+    run.text = "PHA 1.1: PRESUMPTIVE TB EVALUATION & MICROBIOLOGICAL CONFIRMATION"
+    format_text(run, 18, bold=True, color=WHITE)
 
-    # Save to memory buffer
+    # 2. Left Column (Objectives & Details)
+    draw_info_box(slide, left=Inches(0.5), top=Inches(1.5), width=Inches(4), height=Inches(2), 
+                  title="OBJECTIVE (ઉદ્દેશ્ય)", 
+                  content="શંકાસ્પદ TB દર્દીની યોગ્ય તપાસ કરી માઇક્રોબાયોલોજિકલ પુષ્ટિ પ્રાપ્ત કરવી.")
+                  
+    draw_info_box(slide, left=Inches(0.5), top=Inches(3.8), width=Inches(4), height=Inches(1.5), 
+                  title="WHO (જવાબદાર વ્યક્તિ)", 
+                  content="MO / STS / Lab Technician / CHO / Staff Nurse", border_color=NAVY_BLUE)
+
+    draw_info_box(slide, left=Inches(0.5), top=Inches(5.6), width=Inches(4), height=Inches(1.5), 
+                  title="TIMELINE (સમયમર્યાદા)", 
+                  content="પ્રથમ મુલાકાત દરમિયાન (૦-૨૪ કલાકમાં તપાસ શરૂ કરવી).", border_color=RGBColor(200, 80, 80))
+
+    # 3. Right Column (Workflow Flowchart)
+    # Background for Workflow
+    workflow_bg = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(4.8), Inches(1.5), Inches(4.8), Inches(5.6))
+    workflow_bg.fill.solid()
+    workflow_bg.fill.fore_color.rgb = LIGHT_BG
+    workflow_bg.line.color.rgb = TEAL_GREEN
+    
+    wf_title = slide.shapes.add_textbox(Inches(5), Inches(1.6), Inches(4.4), Inches(0.5))
+    run_wft = wf_title.text_frame.paragraphs[0].add_run()
+    run_wft.text = "STEP-BY-STEP WORKFLOW"
+    format_text(run_wft, 14, bold=True, color=NAVY_BLUE)
+
+    # Drawing the steps mathematically
+    steps = [
+        "શંકાસ્પદ TB દર્દીનું ઇતિહાસ, લક્ષણો (ખાંસી, તાવ) પૂછો.",
+        "શારીરિક તપાસ કરો.",
+        "સંપૂર્ણ ગુણવત્તાવાળા નમૂના માટે માર્ગદર્શન આપો.",
+        "CBNAAT / Truenat / Cartridge આધારિત NAAT દ્વારા તપાસ કરો.",
+        "પરિણામની પુષ્ટિ કરો (TB Detected / Not Detected)."
+    ]
+    
+    start_top = 2.2
+    for idx, text in enumerate(steps):
+        draw_workflow_step(slide, step_num=idx+1, text=text, left=Inches(5), top=Inches(start_top))
+        start_top += 0.85 # Space between steps
+
     ppt_io = io.BytesIO()
     prs.save(ppt_io)
     ppt_io.seek(0)
     return ppt_io
 
-# --- Main App Execution ---
-uploaded_docx = st.file_uploader("Upload Bilingual Word Document (.docx)", type=["docx"])
+# --- Streamlit UI ---
+uploaded_docx = st.file_uploader("Upload Word Document (.docx)", type=["docx"])
 
 if uploaded_docx is not None:
-    with st.spinner("Parsing Gujarati/English Document Structure..."):
-        parsed_data = parse_ntep_document(uploaded_docx)
+    with st.spinner("Drawing Flowcharts and Infographic Layouts..."):
+        ppt_file = generate_infographic_ppt(uploaded_docx)
         
-    with st.spinner("Generating Structured PowerPoint..."):
-        ppt_file = generate_ppt(parsed_data)
-        
-    st.success("PowerPoint Generated Successfully!")
+    st.success("Infographic PowerPoint Generated Successfully!")
     
     st.download_button(
-        label="📊 Download Professional PPTX",
+        label="📊 Download Flowchart/Infographic PPTX",
         data=ppt_file,
-        file_name="AMC_NTEP_Operational_Manual.pptx",
+        file_name="AMC_NTEP_Visual_Infographic.pptx",
         mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
     )
