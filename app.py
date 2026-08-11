@@ -1,303 +1,121 @@
 import streamlit as st
-import streamlit.components.v1 as components
-import mammoth
-import weasyprint
-import base64
-from bs4 import BeautifulSoup
-import tempfile
-import os
+import docx
+from pptx import Presentation
+from pptx.util import Inches, Pt
+from pptx.enum.text import PP_ALIGN
+from pptx.dml.color import RGBColor
+import io
 
-st.set_page_config(page_title="AMC NTEP Manual Generator", layout="wide")
-st.title("AMC NTEP - Official Booklet & Flipbook Generator")
+st.set_page_config(page_title="AMC NTEP PPT Generator", layout="wide")
+st.title("AMC NTEP - Professional Infographic PPT Generator")
+st.markdown("Upload a `.docx` file. The app will split sections by **Headings** and generate a visually structured PowerPoint presentation.")
 
-# --- Helper Function: Convert local image to Base64 ---
-def get_image_base64(filepath):
-    if os.path.exists(filepath):
-        with open(filepath, "rb") as image_file:
-            encoded_string = base64.b64encode(image_file.read()).decode()
-            mime_type = "image/png" if filepath.lower().endswith(".png") else "image/jpeg"
-            return f"data:{mime_type};base64,{encoded_string}"
-    return ""
+# --- Helper Function: Extract content from Word ---
+def extract_content_from_docx(docx_file):
+    doc = docx.Document(docx_file)
+    slides_data = []
+    current_slide = {"title": "Introduction", "content": []}
+    
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if not text:
+            continue
+            
+        # If it's a Heading 1 or 2, treat it as a new slide trigger
+        if para.style.name.startswith('Heading'):
+            if current_slide["content"] or current_slide["title"] != "Introduction":
+                slides_data.append(current_slide)
+            current_slide = {"title": text, "content": []}
+        else:
+            current_slide["content"].append(text)
+            
+    if current_slide["content"]:
+        slides_data.append(current_slide)
+        
+    return slides_data
 
-# 1. Load Logos
-amc_logo_b64 = get_image_base64("Amdavad_Municipal_Corporation_logo.png")
-ntep_logo_b64 = get_image_base64("1-s2.0-S0019570720303152-gr1.jpg") 
+# --- Helper Function: Create Infographic PPT ---
+def create_ppt(slides_data):
+    prs = Presentation()
+    
+    # Define custom colors (AMC / NTEP Theme)
+    theme_dark_blue = RGBColor(10, 25, 47)
+    theme_teal = RGBColor(32, 163, 158)
+    theme_light_gray = RGBColor(240, 240, 240)
+    
+    # 1. Create Title Slide
+    title_slide_layout = prs.slide_layouts[0]
+    slide = prs.slides.add_slide(title_slide_layout)
+    title = slide.shapes.title
+    subtitle = slide.placeholders[1]
+    
+    title.text = "NTEP Public Health Actions"
+    subtitle.text = "Operational Manual & Infographics\nAhmedabad Municipal Corporation"
+    
+    # 2. Create Content Slides
+    blank_slide_layout = prs.slide_layouts[6] # Blank layout for custom drawing
+    
+    for data in slides_data:
+        slide = prs.slides.add_slide(blank_slide_layout)
+        
+        # Draw Header Banner (Dark Blue)
+        header_shape = slide.shapes.add_shape(
+            1, Inches(0), Inches(0), Inches(10), Inches(1.2) # 1 is MSO_SHAPE.RECTANGLE
+        )
+        header_shape.fill.solid()
+        header_shape.fill.fore_color.rgb = theme_dark_blue
+        header_shape.line.fill.background()
+        
+        # Add Title Text to Banner
+        txBox_title = slide.shapes.add_textbox(Inches(0.5), Inches(0.2), Inches(9), Inches(1))
+        tf_title = txBox_title.text_frame
+        p_title = tf_title.paragraphs[0]
+        p_title.text = data["title"]
+        p_title.font.size = Pt(32)
+        p_title.font.bold = True
+        p_title.font.color.rgb = RGBColor(255, 255, 255)
+        
+        # Draw Content Background Box (Light Gray for infographic feel)
+        content_bg = slide.shapes.add_shape(
+            1, Inches(0.5), Inches(1.5), Inches(9), Inches(5.5)
+        )
+        content_bg.fill.solid()
+        content_bg.fill.fore_color.rgb = theme_light_gray
+        content_bg.line.color.rgb = theme_teal
+        content_bg.line.width = Pt(2)
+        
+        # Add Content Text
+        txBox_content = slide.shapes.add_textbox(Inches(0.8), Inches(1.8), Inches(8.4), Inches(5))
+        tf_content = txBox_content.text_frame
+        tf_content.word_wrap = True
+        
+        for idx, paragraph_text in enumerate(data["content"]):
+            p = tf_content.add_paragraph() if idx > 0 else tf_content.paragraphs[0]
+            p.text = paragraph_text
+            p.font.size = Pt(16)
+            p.space_after = Pt(14)
 
-# 2. Load Heritage Background (Safely)
-bg_image_b64 = ""
-possible_bgs = ["banner_sidi-saiyyad-jali_902.jpg", "riverfront.jpg", "image_e9f81d.jpg"]
-for bg in possible_bgs:
-    if os.path.exists(bg):
-        bg_image_b64 = get_image_base64(bg)
-        break
+    # Save to memory
+    ppt_io = io.BytesIO()
+    prs.save(ppt_io)
+    ppt_io.seek(0)
+    return ppt_io
 
-# Safely construct the CSS for the background only if it exists
-bg_css_rule = f"background-image: url('{bg_image_b64}');" if bg_image_b64 else "background-color: transparent;"
-
+# --- Streamlit UI ---
 uploaded_docx = st.file_uploader("Upload Content Word Document (.docx)", type=["docx"])
 
 if uploaded_docx is not None:
-    with st.spinner("Extracting Gujarati content..."):
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_docx:
-            tmp_docx.write(uploaded_docx.read())
-            tmp_docx_path = tmp_docx.name
-
-        with open(tmp_docx_path, "rb") as docx_file:
-            result = mammoth.convert_to_html(docx_file)
-            raw_html = result.value
-        os.remove(tmp_docx_path) 
-
-    with st.spinner("Applying Perfect Government Alignment..."):
-        soup = BeautifulSoup(raw_html, 'html.parser')
+    with st.spinner("Analyzing document structure..."):
+        slides_data = extract_content_from_docx(uploaded_docx)
         
-        full_html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <style>
-                @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Gujarati:wght@400;700&display=swap');
-                
-                body {{ 
-                    font-family: 'Noto Sans Gujarati', sans-serif; 
-                    line-height: 1.6; 
-                    color: #000; 
-                    text-align: justify;
-                }}
-                
-                /* ----------------------------------------------------- */
-                /* 1. RUNNING HEADER (Bulletproof Table Layout)          */
-                /* ----------------------------------------------------- */
-                #page-header {{ 
-                    position: running(pageHeader); 
-                    width: 100%;
-                }}
-                
-                .header-table {{
-                    width: 100%;
-                    border-collapse: collapse;
-                    border-bottom: 2px solid #000;
-                    margin-bottom: 10px;
-                }}
-                
-                .header-table td {{ padding-bottom: 10px; vertical-align: middle; border: none; }}
-                
-                .h-left {{ text-align: left; width: 15%; }}
-                .h-center {{ text-align: center; width: 70%; font-size: 16px; font-weight: bold; color: #000; }}
-                .h-right {{ text-align: right; width: 15%; }}
-                
-                .hdr-logo {{ height: 60px; object-fit: contain; }}
-
-                /* ----------------------------------------------------- */
-                /* 2. PAGE SETTINGS                                      */
-                /* ----------------------------------------------------- */
-                @page {{
-                    size: A4;
-                    margin: 3.5cm 2cm 2.5cm 2cm;
-                    background-color: #ffffff; 
-                    
-                    @top-center {{ 
-                        content: element(pageHeader); 
-                        width: 100%; 
-                    }}
-                    @bottom-center {{ 
-                        content: counter(page); 
-                        font-family: 'Arial', sans-serif; 
-                    }}
-                }}
-
-                /* ----------------------------------------------------- */
-                /* 3. CLASSIC CONSTITUTION-STYLE COVER PAGE              */
-                /* ----------------------------------------------------- */
-                @page cover {{
-                    margin: 0cm; 
-                    @top-center {{ content: none; }} 
-                    @bottom-center {{ content: none; }} 
-                }}
-
-                .cover-page {{
-                    page: cover; 
-                    page-break-after: always;
-                    position: relative;
-                    width: 21cm;
-                    height: 29.7cm;
-                    background-color: #0A192F; /* Very dark slate/navy */
-                    box-sizing: border-box;
-                    padding: 1.5cm; /* Outer margin */
-                    text-align: center;
-                }}
-
-                .cover-bg {{
-                    position: absolute;
-                    top: 0; left: 0; right: 0; bottom: 0;
-                    {bg_css_rule}
-                    background-size: cover;
-                    background-position: center;
-                    filter: blur(5px);
-                    opacity: 0.15; 
-                    z-index: 1;
-                }}
-
-                /* Using Padding instead of Absolute Positioning keeps logos inside */
-                .cover-border {{
-                    position: relative;
-                    width: 100%; 
-                    height: 100%;
-                    border: 4px solid #D4AF37; /* Gold */
-                    outline: 1px solid #D4AF37;
-                    outline-offset: -10px;
-                    z-index: 2;
-                    box-sizing: border-box;
-                    padding: 2cm;
-                }}
-
-                .cover-logos-table {{
-                    width: 100%;
-                    border-collapse: collapse;
-                }}
-                
-                .c-logo {{
-                    height: 110px;
-                    background-color: #ffffff; 
-                    border-radius: 50%; 
-                    padding: 5px;
-                }}
-
-                .cover-title-box {{
-                    background-color: rgba(10, 25, 47, 0.85);
-                    border: 2px solid #D4AF37;
-                    padding: 40px 20px;
-                    margin-top: 3cm;
-                    margin-bottom: 5cm;
-                }}
-
-                .cover-title {{
-                    font-family: 'Georgia', serif;
-                    font-size: 50px;
-                    font-weight: bold;
-                    color: #FFFFFF;
-                    text-transform: uppercase;
-                    letter-spacing: 2px;
-                    margin: 0;
-                    line-height: 1.3;
-                }}
-
-                .cover-subtitle {{
-                    font-family: 'Georgia', serif;
-                    font-size: 22px;
-                    color: #D4AF37;
-                    margin-top: 15px;
-                    text-transform: uppercase;
-                    letter-spacing: 1px;
-                }}
-
-                .cover-footer {{
-                    font-family: 'Georgia', serif;
-                    font-size: 18px;
-                    color: #FFFFFF;
-                    width: 100%;
-                }}
-
-                /* ----------------------------------------------------- */
-                /* 4. CONTENT FORMATTING                                 */
-                /* ----------------------------------------------------- */
-                .content h1 {{ page-break-before: always; color: #000; border-bottom: 2px solid #000; padding-bottom: 5px; margin-top: 0; }}
-                .content h2, .content h3 {{ color: #000; font-weight: bold; margin-top: 25px; }}
-                .content ul, .content ol {{ margin-left: 20px; padding-left: 10px; }}
-                .content li {{ margin-bottom: 8px; }}
-                .content table {{ width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 15px; }}
-                .content th, .content td {{ border: 1px solid #000; padding: 10px; text-align: left; }}
-                .content th {{ background-color: #f2f2f2; color: #000; font-weight: bold; text-align: center; }}
-                
-            </style>
-        </head>
-        <body>
-            <!-- Header -->
-            <div id="page-header">
-                <table class="header-table">
-                    <tr>
-                        <td class="h-left"><img src="{amc_logo_b64}" class="hdr-logo" alt="AMC Logo"></td>
-                        <td class="h-center">રાષ્ટ્રીય ક્ષયરોગ નિવારણ કાર્યક્રમ (NTEP) - AMC</td>
-                        <td class="h-right"><img src="{ntep_logo_b64}" class="hdr-logo" alt="NTEP Logo"></td>
-                    </tr>
-                </table>
-            </div>
-            
-            <!-- Classic Cover Page -->
-            <div class="cover-page">
-                <div class="cover-bg"></div>
-                <div class="cover-border">
-                    
-                    <!-- Logos Table inside the Border ensures they never bleed out -->
-                    <table class="cover-logos-table">
-                        <tr>
-                            <td style="text-align: left;"><img src="{amc_logo_b64}" class="c-logo" alt="AMC Logo"></td>
-                            <td style="text-align: right;"><img src="{ntep_logo_b64}" class="c-logo" alt="NTEP Logo"></td>
-                        </tr>
-                    </table>
-                    
-                    <div class="cover-title-box">
-                        <div class="cover-title">Public Health<br>Action</div>
-                        <div class="cover-subtitle">Operational Manual</div>
-                    </div>
-                    
-                    <div class="cover-footer">
-                        National Tuberculosis Elimination Program<br>
-                        Ahmedabad Municipal Corporation<br><br>
-                        &copy; 2026
-                    </div>
-                    
-                </div>
-            </div>
-            
-            <!-- Content -->
-            <div class="content">
-                {str(soup)}
-            </div>
-        </body>
-        </html>
-        """
-
-    with st.spinner("Generating High-Quality PDF..."):
-        # Added base_url="." to prevent Weasyprint from crashing on empty URLs
-        pdf_bytes = weasyprint.HTML(string=full_html, base_url=".").write_pdf()
-
-    st.success("Manual & Flipbook Generated Successfully!")
+    with st.spinner("Generating Infographic PPTX..."):
+        ppt_file = create_ppt(slides_data)
+        
+    st.success("PowerPoint Generated Successfully!")
     
     st.download_button(
-        label="📄 Download Official PDF Manual",
-        data=pdf_bytes,
-        file_name="AMC_NTEP_Operational_Manual.pdf",
-        mime="application/pdf"
+        label="📊 Download Professional PPTX",
+        data=ppt_file,
+        file_name="AMC_NTEP_Infographic.pptx",
+        mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
     )
-
-    st.markdown("---")
-    st.header("📖 3D Interactive Flipbook")
-
-    b64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
-    pdf_data_uri = f"data:application/pdf;base64,{b64_pdf}"
-
-    flipbook_html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <link href="https://cdn.jsdelivr.net/npm/dflip/css/dflip.min.css" rel="stylesheet">
-        <link href="https://cdn.jsdelivr.net/npm/dflip/css/themify-icons.min.css" rel="stylesheet">
-        <style>
-            body {{ margin: 0; padding: 0; background-color: #f4f4f9; }}
-            ._df_book {{ height: 100vh !important; }} 
-        </style>
-    </head>
-    <body>
-        <div class="_df_book" webgl="true" backgroundcolor="#f4f4f9"
-             source="{pdf_data_uri}" id="df_manual">
-        </div>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/dflip/js/dflip.min.js"></script>
-    </body>
-    </html>
-    """
-    
-    with st.spinner("Rendering 3D Flipbook Viewer..."):
-        components.html(flipbook_html, height=750, scrolling=False)
