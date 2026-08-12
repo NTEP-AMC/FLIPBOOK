@@ -858,7 +858,7 @@ def draw_title_slide(prs, doc_title, logos, heritage_bg=None, riverfront=None):
     bg_drawn = False
     if heritage_bg is not None:
         try:
-            bg_buf = prepare_cover_image(heritage_bg, 1600, 900, blur_radius=14)
+            bg_buf = prepare_cover_image(heritage_bg, 1600, 900, blur_radius=5)
             slide.shapes.add_picture(bg_buf, 0, 0, width=SLIDE_W, height=SLIDE_H)
             bg_drawn = True
         except Exception:
@@ -903,6 +903,61 @@ def draw_title_slide(prs, doc_title, logos, heritage_bg=None, riverfront=None):
                      "સાબરમતી રિવરફ્રન્ટ, અમદાવાદ", 11, RGBColor(0xB9, 0xD3, 0xF2), align=PP_ALIGN.CENTER)
         except Exception:
             pass
+
+    return slide
+
+
+def draw_closing_slide(prs, logos, closing_bg=None):
+    """Thank-you slide. Uses the same "photo background" idea as the title
+    slide, but LESS blurred so the heritage photo actually reads, plus a
+    small tricolor strip + Ashoka Chakra medallion for the India touch
+    instead of covering the whole slide in flat color bands."""
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+
+    bg_drawn = False
+    if closing_bg is not None:
+        try:
+            bg_buf = prepare_cover_image(closing_bg, 1600, 900, blur_radius=3)
+            slide.shapes.add_picture(bg_buf, 0, 0, width=SLIDE_W, height=SLIDE_H)
+            bg_drawn = True
+        except Exception:
+            bg_drawn = False
+    if not bg_drawn:
+        add_rect(slide, 0, 0, SLIDE_W, SLIDE_H, NAVY)
+
+    # Lighter veil than the title slide (58 -> 44) so the photo stays visible.
+    veil = add_rect(slide, 0, 0, SLIDE_W, SLIDE_H, NAVY)
+    set_shape_alpha(veil, 44)
+
+    # thin tricolor accent strip along the very bottom
+    strip_h = Inches(0.28)
+    third = SLIDE_W // 3
+    add_rect(slide, 0, SLIDE_H - strip_h, third, strip_h, SAFFRON)
+    add_rect(slide, third, SLIDE_H - strip_h, third, strip_h, WHITE)
+    add_rect(slide, 2 * third, SLIDE_H - strip_h, SLIDE_W - 2 * third, strip_h, INDIA_GREEN)
+
+    # small Ashoka Chakra medallion, centered, sitting just above the strip
+    outer_d = Inches(0.62)
+    cx = SLIDE_W // 2
+    cy = SLIDE_H - strip_h - outer_d // 2 - Inches(0.06)
+    add_oval(slide, cx - outer_d // 2, cy - outer_d // 2, outer_d, WHITE)
+    inner_d = int(outer_d * 0.8)
+    draw_ashoka_chakra(slide, cx - inner_d // 2, cy - inner_d // 2, inner_d, CHAKRA_NAVY)
+
+    add_text(slide, Inches(1), Inches(2.85), SLIDE_W - Inches(2), Inches(1),
+              "આભાર (Thank You)", 34, WHITE, bold=True, align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+    add_text(slide, Inches(1), Inches(3.8), SLIDE_W - Inches(2), Inches(0.5),
+              "NTEP  \u2022  Ahmedabad Municipal Corporation", 15, RGBColor(0xB9, 0xD3, 0xF2), align=PP_ALIGN.CENTER)
+
+    if logos[0] is not None:
+        d = Inches(0.9)
+        add_oval(slide, Inches(0.4), Inches(0.4), d, WHITE)
+        slide.shapes.add_picture(logos[0], Inches(0.4) + Inches(0.07), Inches(0.4) + Inches(0.07), height=d - Inches(0.14))
+    if logos[1] is not None:
+        d = Inches(0.9)
+        rx = SLIDE_W - Inches(0.4) - d
+        add_oval(slide, rx, Inches(0.4), d, WHITE)
+        slide.shapes.add_picture(logos[1], rx + Inches(0.07), Inches(0.4) + Inches(0.07), height=d - Inches(0.14))
 
     return slide
 
@@ -1086,34 +1141,32 @@ def normalize_keyword(name):
     return re.sub(r"[\s_\-]+", "", base).lower()
 
 
-def find_equipment_matches(sub, image_map):
-    """Scan a sub-module's field text for any uploaded-photo keyword.
-    IMPORTANT: this matches on whole WORD boundaries, not raw substrings.
-    Filenames are normalized by stripping spaces/underscores/hyphens (e.g.
-    "Chest X-Ray.jpg" and "chest_x_ray.png" both become "chestxray"). To find
-    that keyword in the sub-module's text we tokenize the text into real words
-    and join up to 4 *consecutive* words back together (e.g. "chest", "x",
-    "ray" -> "chestxray") and only count it as a match if that joined phrase
-    is EXACTLY equal to the keyword. This is what prevents a short/generic
-    keyword from accidentally matching inside unrelated words elsewhere in the
-    document (the old version concatenated the entire text into one long
-    string with no spaces and did a plain substring search, which is why a
-    photo could show up on unrelated slides while another photo never
-    matched at all).
-    """
+def submodule_joined_tokens(sub):
+    """Tokenize a sub-module's full text and return the set of every
+    1-4-consecutive-word run joined with no spaces (e.g. "chest","x","ray"
+    -> "chestxray"). Shared by the automatic keyword matcher AND the
+    placement-UI's auto-suggestions, so both agree on what "matches" means."""
     raw = " ".join(" ".join(sub.get(k, [])) for k in FIELD_META)
-    # Extract pure word-character runs only (letters/digits, Unicode-aware),
-    # so punctuation glued onto a word — "(GeneXpert)", "CBNAAT,", "NAAT."
-    # etc. — no longer prevents it from equaling a clean filename keyword.
-    # (An earlier version split only on whitespace/underscore/hyphen, so a
-    # trailing bracket or comma silently broke the match — that's why a
-    # correctly-named photo still wasn't showing up at all.)
     tokens = [t.lower() for t in re.findall(r"[^\W_]+", raw, re.UNICODE)]
     joined = set()
     max_n = 4
     for n in range(1, max_n + 1):
         for i in range(len(tokens) - n + 1):
             joined.add("".join(tokens[i:i + n]))
+    return joined
+
+
+def find_equipment_matches(sub, image_map):
+    """Scan a sub-module's field text for any uploaded-photo keyword.
+    IMPORTANT: this matches on whole WORD boundaries, not raw substrings —
+    see submodule_joined_tokens(). This is used only to compute the
+    *suggested default* placement shown in the Streamlit UI; the deck itself
+    is built from whatever the user confirms/edits there (see
+    auto_suggest_subs_for_keyword and the manual-placement UI below), because
+    pure keyword auto-matching alone was still too unreliable on real
+    documents to trust without a human check.
+    """
+    joined = submodule_joined_tokens(sub)
     matches = []
     for kw, file in image_map.items():
         if kw and len(kw) >= 3 and kw in joined:
@@ -1121,12 +1174,32 @@ def find_equipment_matches(sub, image_map):
     return matches
 
 
+def sub_label(modules, mod_num, sub_num):
+    return f"{sub_num}  {modules[mod_num]['subs'][sub_num]['title']}".strip()
+
+
+def auto_suggest_subs_for_keyword(kw, modules):
+    """Every (mod_num, sub_num) whose text contains `kw` as a whole
+    word/phrase, in document order. Used only to pre-fill the manual
+    placement multiselect — the user can add/remove freely."""
+    if not kw or len(kw) < 3:
+        return []
+    out = []
+    for mod_num in sorted(modules.keys(), key=lambda x: int(x)):
+        for sub_num in sorted(modules[mod_num]["subs"].keys(), key=lambda x: tuple(map(int, x.split(".")))):
+            sub = modules[mod_num]["subs"][sub_num]
+            if kw in submodule_joined_tokens(sub):
+                out.append((mod_num, sub_num))
+    return out
+
+
 # ----------------------------------------------------------------------
 # 8. TWO-PASS BUILD: plan everything first (for real TOC page numbers),
 #    then draw.
 # ----------------------------------------------------------------------
-def run_build(preface, modules, logos, image_map, equip_max_repeats=DEFAULT_EQUIP_MAX_REPEATS,
-              heritage_bg=None, riverfront=None, progress_cb=None):
+def run_build(preface, modules, logos, image_map, manual_placement,
+              equip_max_repeats=DEFAULT_EQUIP_MAX_REPEATS,
+              heritage_bg=None, riverfront=None, closing_bg=None, progress_cb=None):
     prs = Presentation()
     prs.slide_width = SLIDE_W
     prs.slide_height = SLIDE_H
@@ -1157,16 +1230,22 @@ def run_build(preface, modules, logos, image_map, equip_max_repeats=DEFAULT_EQUI
 
     submodule_matches = {}
     submodule_plans = {}
+    # `manual_placement` is {keyword: [(mod_num, sub_num), ...]} built from the
+    # user's explicit choices in the Streamlit UI (pre-filled with keyword
+    # auto-suggestions, but fully user-editable) — this replaces blind
+    # keyword auto-matching as the source of truth for where each photo goes,
+    # which is what actually fixes photos landing in the wrong/no slides.
     # How many sub-modules each keyword has already been placed into. Walking
     # sub-modules in real document order and capping here means the SAME
     # keyword/photo can never end up in more than `equip_max_repeats` places
-    # in the whole deck, no matter how many times its word appears in the text.
+    # in the whole deck (defensive re-check — the UI already enforces this).
     equip_usage_count = {kw: 0 for kw in image_map}
     for mod_num in mod_nums:
         sub_nums_sorted = sorted(modules[mod_num]["subs"].keys(), key=lambda x: tuple(map(int, x.split("."))))
         for sub_num in sub_nums_sorted:
             sub = modules[mod_num]["subs"][sub_num]
-            raw_matches = find_equipment_matches(sub, image_map)
+            raw_matches = [(kw, image_map[kw]) for kw, refs in manual_placement.items()
+                            if (mod_num, sub_num) in refs]
             matches = []
             for kw, file in raw_matches:
                 if equip_usage_count.get(kw, 0) < equip_max_repeats:
@@ -1246,29 +1325,8 @@ def run_build(preface, modules, logos, image_map, equip_max_repeats=DEFAULT_EQUI
         for gi, chunk in enumerate(gallery_chunks):
             draw_photo_gallery_slide(prs, chunk, logos, gi + 1, len(gallery_chunks))
 
-    # ---- closing slide: India-style tricolor with an Ashoka Chakra ----
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    band_h = SLIDE_H // 3
-    add_rect(slide, 0, 0, SLIDE_W, band_h, SAFFRON)
-    add_rect(slide, 0, band_h, SLIDE_W, band_h, WHITE)
-    add_rect(slide, 0, 2 * band_h, SLIDE_W, SLIDE_H - 2 * band_h, INDIA_GREEN)
-    chakra_d = Inches(1.1)
-    chakra_cx = SLIDE_W // 2
-    chakra_cy = band_h + band_h // 2
-    draw_ashoka_chakra(slide, chakra_cx - chakra_d // 2, chakra_cy - chakra_d // 2, chakra_d, CHAKRA_NAVY)
-    add_text(slide, Inches(1), band_h - Inches(0.85), SLIDE_W - Inches(2), Inches(0.6),
-              "આભાર (Thank You)", 30, WHITE, bold=True, align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
-    add_text(slide, Inches(1), 2 * band_h + Inches(0.15), SLIDE_W - Inches(2), Inches(0.5),
-              "NTEP  \u2022  Ahmedabad Municipal Corporation", 15, WHITE, bold=True, align=PP_ALIGN.CENTER)
-    if logos[0] is not None:
-        d = Inches(0.75)
-        add_oval(slide, Inches(0.4), SLIDE_H - d - Inches(0.3), d, WHITE)
-        slide.shapes.add_picture(logos[0], Inches(0.4) + Inches(0.06), SLIDE_H - d - Inches(0.3) + Inches(0.06), height=d - Inches(0.12))
-    if logos[1] is not None:
-        d = Inches(0.75)
-        rx = SLIDE_W - Inches(0.4) - d
-        add_oval(slide, rx, SLIDE_H - d - Inches(0.3), d, WHITE)
-        slide.shapes.add_picture(logos[1], rx + Inches(0.06), SLIDE_H - d - Inches(0.3) + Inches(0.06), height=d - Inches(0.12))
+    # ---- closing slide: light-blur heritage photo + tricolor/chakra accent ----
+    draw_closing_slide(prs, logos, closing_bg=closing_bg)
 
     return prs
 
@@ -1289,14 +1347,22 @@ st.markdown(
     "if those files already sit next to `app.py` in the repo — upload replacements "
     "below only if you want to override them."
 )
-colA, colB = st.columns(2)
+colA, colB, colC = st.columns(3)
 with colA:
     heritage_upload = st.file_uploader("Title background (heritage photo)", type=["png", "jpg", "jpeg"], key="heritage_bg")
 with colB:
     riverfront_upload = st.file_uploader("Title banner (riverfront photo)", type=["png", "jpg", "jpeg"], key="riverfront_img")
+with colC:
+    closing_bg_upload = st.file_uploader("Closing page background (optional)", type=["png", "jpg", "jpeg"], key="closing_bg")
 
 heritage_bg = resolve_front_image(heritage_upload, DEFAULT_HERITAGE_BG)
 riverfront = resolve_front_image(riverfront_upload, DEFAULT_RIVERFRONT)
+# Closing page now defaults to the SAME heritage photo as the title page
+# (lightly blurred, see draw_closing_slide) so the two bookend slides match;
+# falls back to the riverfront shot only if no heritage photo is available.
+closing_bg = resolve_front_image(closing_bg_upload, DEFAULT_HERITAGE_BG)
+if closing_bg is None:
+    closing_bg = resolve_front_image(None, DEFAULT_RIVERFRONT)
 if heritage_bg is None:
     st.info(f"No heritage background found (looked for `{DEFAULT_HERITAGE_BG}`). Title slide will use a solid navy background instead.")
 if riverfront is None:
@@ -1304,15 +1370,14 @@ if riverfront is None:
 
 st.markdown(
     "**Equipment / reference photos (optional).** Upload any number of photos. "
-    "Name each file after the keyword that should trigger it — e.g. `genexpert.png` "
-    "or `chest_x_ray.jpg` will auto-insert a reference slide (plus a small photo "
-    "card right on the relevant content slide) into any sub-module whose text "
-    "mentions that exact word/phrase (case-insensitive, spaces/underscores/hyphens "
-    "ignored). Matching requires the whole word/phrase to appear together in the "
-    "text — a short keyword can no longer accidentally match unrelated slides. "
-    "**Every uploaded photo is guaranteed to appear somewhere in the deck** — if a "
-    "photo's keyword never matches any sub-module text, it's placed on a dedicated "
-    "reference-photo slide near the end instead of being dropped."
+    "After you upload your Word document below, you'll get an explicit picker "
+    "for **exactly which sub-module(s) each photo appears on** — pre-filled with "
+    "a keyword guess, but yours to correct. This is what actually fixes photos "
+    "landing on the wrong slide or not appearing at all: placement is no longer "
+    "left purely to automatic keyword matching. **Every uploaded photo is "
+    "guaranteed to appear somewhere in the deck** — leave a photo unplaced and "
+    "it lands on a dedicated reference-photo slide near the end instead of "
+    "being dropped."
 )
 equipment_files = st.file_uploader(
     "Equipment photos", type=["png", "jpg", "jpeg"], accept_multiple_files=True
@@ -1353,6 +1418,44 @@ if uploaded_docx:
                 f"(e.g. add a number) if they're meant to be different photos."
             )
 
+    # ---- explicit photo placement picker (this is what actually fixes photos
+    # landing on the wrong sub-module) ----
+    # Keyword auto-matching alone was unreliable, so it's used only to
+    # PRE-FILL a suggested sub-module for each photo; you confirm or correct
+    # it here, and THAT choice — not the keyword guess — decides where the
+    # photo ends up in the deck.
+    manual_placement = {}
+    if image_map:
+        st.markdown(
+            "**Confirm where each photo goes.** Each photo below is pre-filled with a "
+            "keyword-based guess (sub-modules whose text mentions its filename). Add or "
+            "remove sub-modules for any photo that's landing in the wrong place — the "
+            "selection you make here is final."
+        )
+        sub_choice_labels = {}
+        for mod_num in sorted(modules.keys(), key=lambda x: int(x)):
+            for sub_num in sorted(modules[mod_num]["subs"].keys(), key=lambda x: tuple(map(int, x.split(".")))):
+                ref = (mod_num, sub_num)
+                sub_choice_labels[ref] = f"{sub_num}  {modules[mod_num]['subs'][sub_num]['title']}"
+        all_refs = list(sub_choice_labels.keys())
+        for kw in sorted(image_map.keys()):
+            file = image_map[kw]
+            default_refs = [r for r in auto_suggest_subs_for_keyword(kw, modules) if r in sub_choice_labels]
+            chosen = st.multiselect(
+                f"📷 {kw}  —  {file.name}",
+                options=all_refs,
+                default=default_refs,
+                format_func=lambda r: sub_choice_labels[r],
+                key=f"placement__{kw}",
+            )
+            manual_placement[kw] = chosen
+        unplaced = [kw for kw, refs in manual_placement.items() if not refs]
+        if unplaced:
+            st.caption(
+                "Not placed on any sub-module (will appear on a reference-photo slide "
+                "near the end instead): " + ", ".join(sorted(unplaced))
+            )
+
     if total_subs == 0:
         st.error("No sub-modules (like 1.1, 1.2) were detected. Check your Word doc headings, "
                   "or adjust MODULE_RE / SUBMODULE_RE in the script if your numbering format differs.")
@@ -1360,6 +1463,7 @@ if uploaded_docx:
         progress = st.progress(0.0, text="Designing slides...")
         with st.spinner("Measuring content and designing slides..."):
             prs = run_build(preface, modules, (left_logo_file, right_logo_file), image_map,
+                              manual_placement,
                               equip_max_repeats=int(equip_max_repeats),
                               heritage_bg=heritage_bg, riverfront=riverfront,
                               progress_cb=lambda f: progress.progress(f, text="Designing slides..."))
