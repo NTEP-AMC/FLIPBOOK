@@ -4,3 +4,4 @@ weasyprint
 beautifulsoup4
 python-docx
 python-pptx
+Pillow>=10.0.0
