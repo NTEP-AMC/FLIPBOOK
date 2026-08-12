@@ -36,6 +36,20 @@ HIGHLIGHT_BG = RGBColor(0xC9, 0xF3, 0xEE)
 HIGHLIGHT_TEXT = RGBColor(0x0B, 0x6E, 0x5D)
 WARN_BG = RGBColor(0xFB, 0xE4, 0xE1)
 WARN_TEXT = RGBColor(0x8A, 0x2A, 0x1E)
+# Extra accent colors purely for visual variety (module badges, dividers, TOC
+# rows) so the deck doesn't read as one flat navy block after 40 slides.
+PURPLE_ICON = RGBColor(0x8E, 0x44, 0xC2)
+TEAL_ICON = RGBColor(0x17, 0x8C, 0xA6)
+MODULE_PALETTE = [GREEN, BLUE_ICON, AMBER_ICON, PURPLE_ICON, RED_ICON, TEAL_ICON]
+def tint(rgb_color, amount=0.82):
+    """Blend a theme color toward white to get a soft halo/background tint of
+    the same hue — keeps things colorful without making anything darker."""
+    hexs = str(rgb_color)
+    r, g, b = int(hexs[0:2], 16), int(hexs[2:4], 16), int(hexs[4:6], 16)
+    r = int(r + (255 - r) * amount)
+    g = int(g + (255 - g) * amount)
+    b = int(b + (255 - b) * amount)
+    return RGBColor(r, g, b)
 FONT = "Noto Sans Gujarati"
 # Font files must sit next to this script (or set full paths).
 FONT_TTF_REGULAR = os.path.join(os.path.dirname(__file__), "NotoSansGujarati-Regular.ttf")
@@ -59,6 +73,10 @@ CARD_PAD = Inches(0.16)
 # when a sub-module has a matched photo. It flows through the same column
 # layout as the text cards, so it never overlaps anything.
 IMAGE_CARD_H_IN = 2.15
+# A single uploaded equipment photo will never be placed into more than this
+# many sub-modules across the whole deck, even if its keyword genuinely
+# appears in more places in the text.
+EQUIP_MAX_REPEATS = 3
 # ----------------------------------------------------------------------
 # FIELD DEFINITIONS
 # ----------------------------------------------------------------------
@@ -401,8 +419,16 @@ def draw_card(slide, x, y, w, h, field_key, size_pt, items, label_override=None)
         bg = CARD_WHITE
         text_color = TEXT_GRAY
     add_rect(slide, x, y, w, h, bg, radius=0.06, shadow=True)
+    if not meta.get("warn") and not meta.get("highlight"):
+        # thin colored accent stripe along the top edge, keyed to the field's
+        # own color, so each card reads as belonging to a "type" at a glance
+        add_rect(slide, x + Inches(0.1), y, w - Inches(0.2), Inches(0.05), meta["color"])
     icon_d = Inches(0.34)
     pad = CARD_PAD
+    icon_cx = x + pad + icon_d // 2
+    icon_cy = y + pad + icon_d // 2
+    halo_d = Inches(0.5)
+    add_oval(slide, icon_cx - halo_d // 2, icon_cy - halo_d // 2, halo_d, tint(meta["color"], 0.78))
     ICON_FN[meta["icon"]](slide, x + pad, y + pad, icon_d, meta["color"])
     label_x = x + pad + icon_d + Inches(0.12)
     label_w = w - pad - icon_d - Inches(0.12) - pad
@@ -417,6 +443,7 @@ def draw_image_card(slide, x, y, w, h, keyword_file):
     (same column-flow as the text cards) so it can never overlap other content."""
     keyword, file = keyword_file
     add_rect(slide, x, y, w, h, CARD_WHITE, radius=0.06, shadow=True)
+    add_rect(slide, x + Inches(0.1), y, w - Inches(0.2), Inches(0.05), TEAL_ICON)
     pad = CARD_PAD
     label_h = Inches(0.28)
     add_text(slide, x + pad, y + pad - Inches(0.02), w - 2 * pad, label_h,
@@ -502,9 +529,15 @@ def plan_submodule(sub, image_match=None):
 # ----------------------------------------------------------------------
 # 6. SLIDE DRAWING
 # ----------------------------------------------------------------------
+def module_accent_color(module_num):
+    try:
+        return MODULE_PALETTE[(int(module_num) - 1) % len(MODULE_PALETTE)]
+    except (ValueError, TypeError):
+        return GREEN
 def draw_header(slide, module_num, module_title, sub_title, group_label, part_no, part_total, logos):
     add_rect(slide, 0, 0, SLIDE_W, SLIDE_H, BG_LIGHT)
-    add_rect(slide, 0, 0, SLIDE_W, HEADER_H, NAVY)
+    add_rect(slide, 0, 0, SLIDE_W, HEADER_H, NAVY_LIGHT)
+    add_rect(slide, 0, HEADER_H, SLIDE_W, Inches(0.06), module_accent_color(module_num))
     left_logo, right_logo = logos
     text_left = Inches(0.55)
     text_right_pad = Inches(0.55)
@@ -554,7 +587,7 @@ def draw_field_slide(prs, module_num, module_title, sub_title, group_label, part
 def draw_equipment_slide(prs, module_num, module_title, sub_title, keyword, image_file, logos):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     add_rect(slide, 0, 0, SLIDE_W, SLIDE_H, BG_LIGHT)
-    add_rect(slide, 0, 0, SLIDE_W, HEADER_H, NAVY)
+    add_rect(slide, 0, 0, SLIDE_W, HEADER_H, NAVY_LIGHT)
     text_left = Inches(0.55)
     if logos[0] is not None:
         d = Inches(0.85)
@@ -608,7 +641,7 @@ def draw_title_slide(prs, doc_title, logos):
 def draw_preface_slide(prs, heading_gj, heading_en, paragraphs, icon, logos):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     add_rect(slide, 0, 0, SLIDE_W, SLIDE_H, BG_LIGHT)
-    add_rect(slide, 0, 0, SLIDE_W, HEADER_H, NAVY)
+    add_rect(slide, 0, 0, SLIDE_W, HEADER_H, NAVY_LIGHT)
     text_left = Inches(0.55)
     if logos[0] is not None:
         d = Inches(0.85)
@@ -637,7 +670,7 @@ def draw_module_overview_slide(prs, modules, module_start_slide, logos):
     and the number of sub-modules it contains, real page number linked via TOC."""
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     add_rect(slide, 0, 0, SLIDE_W, SLIDE_H, BG_LIGHT)
-    add_rect(slide, 0, 0, SLIDE_W, HEADER_H, NAVY)
+    add_rect(slide, 0, 0, SLIDE_W, HEADER_H, NAVY_LIGHT)
     text_left = Inches(0.55)
     if logos[0] is not None:
         d = Inches(0.85)
@@ -659,9 +692,11 @@ def draw_module_overview_slide(prs, modules, module_start_slide, logos):
         r, c = divmod(i, cols)
         x = MARGIN_X + c * (card_w + gap)
         y = BODY_TOP + r * (card_h + gap)
+        m_color = module_accent_color(mod_num)
         add_rect(slide, x, y, card_w, card_h, CARD_WHITE, radius=0.07, shadow=True)
+        add_rect(slide, x, y, Inches(0.08), card_h, m_color, radius=0.02)
         badge_d = Inches(0.5)
-        add_oval(slide, x + Inches(0.2), y + Inches(0.2), badge_d, GREEN)
+        add_oval(slide, x + Inches(0.2), y + Inches(0.2), badge_d, m_color)
         add_text(slide, x + Inches(0.2), y + Inches(0.2), badge_d, badge_d, mod_num, 18, WHITE,
                   bold=True, align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
         title_x = x + Inches(0.2) + badge_d + Inches(0.15)
@@ -674,13 +709,19 @@ def draw_module_overview_slide(prs, modules, module_start_slide, logos):
                   f"{n_subs} sub-modules  \u2022  Slide {page}", 11.5, TEXT_GRAY)
     return slide
 def draw_module_divider_slide(prs, module_num, module_title, sub_titles, logos):
+    m_color = module_accent_color(module_num)
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     add_rect(slide, 0, 0, SLIDE_W, SLIDE_H, NAVY)
-    add_text(slide, Inches(0.9), Inches(0.8), Inches(3), Inches(0.9), f"Module {module_num}", 22, RGBColor(0xB9, 0xD3, 0xF2), bold=True)
-    add_text(slide, Inches(0.9), Inches(1.35), SLIDE_W - Inches(1.8), Inches(1.3), module_title, 32, WHITE, bold=True, anchor=MSO_ANCHOR.MIDDLE)
-    y = Inches(2.9)
+    add_rect(slide, 0, 0, Inches(0.16), SLIDE_H, m_color)
+    badge_d = Inches(0.85)
+    add_oval(slide, Inches(0.9), Inches(0.75), badge_d, m_color)
+    add_text(slide, Inches(0.9), Inches(0.75), badge_d, badge_d, module_num, 26, WHITE,
+              bold=True, align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+    add_text(slide, Inches(0.9) + badge_d + Inches(0.25), Inches(0.85), Inches(3), Inches(0.6), "Module", 16, RGBColor(0xB9, 0xD3, 0xF2), bold=True)
+    add_text(slide, Inches(0.9), Inches(1.85), SLIDE_W - Inches(1.8), Inches(1.1), module_title, 32, WHITE, bold=True, anchor=MSO_ANCHOR.MIDDLE)
+    y = Inches(3.15)
     for i, (sub_num, sub_title) in enumerate(sub_titles):
-        add_oval(slide, Inches(0.9), y + Inches(0.03), Inches(0.16), GREEN)
+        add_oval(slide, Inches(0.9), y + Inches(0.03), Inches(0.16), m_color)
         add_text(slide, Inches(1.25), y - Inches(0.05), SLIDE_W - Inches(2.2), Inches(0.4), f"{sub_num}  {sub_title}", 15, WHITE)
         y += Inches(0.44)
         if y > SLIDE_H - Inches(0.6):
@@ -690,7 +731,7 @@ def draw_toc_slide(prs, entries, page_no_start, logos, part_no, part_total):
     """entries: list of (level, label, page_str). level 0 = module, 1 = sub-module."""
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     add_rect(slide, 0, 0, SLIDE_W, SLIDE_H, BG_LIGHT)
-    add_rect(slide, 0, 0, SLIDE_W, HEADER_H, NAVY)
+    add_rect(slide, 0, 0, SLIDE_W, HEADER_H, NAVY_LIGHT)
     text_left = Inches(0.55)
     if logos[0] is not None:
         d = Inches(0.85)
@@ -779,7 +820,13 @@ def find_equipment_matches(sub, image_map):
     matched at all).
     """
     raw = " ".join(" ".join(sub.get(k, [])) for k in FIELD_META)
-    tokens = [t.lower() for t in re.findall(r"[^\s_\-]+", raw, re.UNICODE)]
+    # Extract pure word-character runs only (letters/digits, Unicode-aware),
+    # so punctuation glued onto a word — "(GeneXpert)", "CBNAAT,", "NAAT."
+    # etc. — no longer prevents it from equaling a clean filename keyword.
+    # (An earlier version split only on whitespace/underscore/hyphen, so a
+    # trailing bracket or comma silently broke the match — that's why a
+    # correctly-named photo still wasn't showing up at all.)
+    tokens = [t.lower() for t in re.findall(r"[^\W_]+", raw, re.UNICODE)]
     joined = set()
     max_n = 4
     for n in range(1, max_n + 1):
@@ -841,9 +888,21 @@ def run_build(preface, modules, logos, image_map, progress_cb=None):
     # disagree with each other.
     submodule_matches = {}
     submodule_plans = {}  # (mod_num, sub_num) -> plan (list of (group,layout))
+    # How many sub-modules each keyword has already been placed into. Walking
+    # sub-modules in real document order and capping here means the SAME
+    # keyword/photo can never end up in more than EQUIP_MAX_REPEATS places in
+    # the whole deck, no matter how many times its word appears in the text.
+    equip_usage_count = {kw: 0 for kw in image_map}
     for mod_num in mod_nums:
-        for sub_num, sub in modules[mod_num]["subs"].items():
-            matches = find_equipment_matches(sub, image_map)
+        sub_nums_sorted = sorted(modules[mod_num]["subs"].keys(), key=lambda x: tuple(map(int, x.split("."))))
+        for sub_num in sub_nums_sorted:
+            sub = modules[mod_num]["subs"][sub_num]
+            raw_matches = find_equipment_matches(sub, image_map)
+            matches = []
+            for kw, file in raw_matches:
+                if equip_usage_count.get(kw, 0) < EQUIP_MAX_REPEATS:
+                    matches.append((kw, file))
+                    equip_usage_count[kw] = equip_usage_count.get(kw, 0) + 1
             submodule_matches[(mod_num, sub_num)] = matches
             # Only the first match gets embedded as a small in-slide thumbnail;
             # if a sub-module happens to match more than one photo, the rest
@@ -935,7 +994,9 @@ st.markdown(
     "card right on the relevant content slide) into any sub-module whose text "
     "mentions that exact word/phrase (case-insensitive, spaces/underscores/hyphens "
     "ignored). Matching now requires the whole word/phrase to appear together in "
-    "the text — a short keyword can no longer accidentally match unrelated slides."
+    "the text — a short keyword can no longer accidentally match unrelated slides. "
+    "Each photo is also capped at appearing in at most 3 sub-modules, even if its "
+    "keyword genuinely comes up more often in the document."
 )
 equipment_files = st.file_uploader(
     "Equipment photos", type=["png", "jpg", "jpeg"], accept_multiple_files=True
