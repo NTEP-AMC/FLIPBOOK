@@ -1,336 +1,1529 @@
 import streamlit as st
+import io
+import os
+import re
+import math
+from pathlib import Path
+
 import docx
+from PIL import Image
 from pptx import Presentation
 from pptx.util import Inches, Pt, Emu
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.enum.shapes import MSO_SHAPE
-import io
-import re
-from PIL import ImageFont
-import os
+from pptx.enum.dml import MSO_LINE_DASH_STYLE
 
-st.set_page_config(page_title="AMC NTEP - Auto-Designer", layout="wide", page_icon="🏥")
-st.title("🏥 AMC NTEP - Professional Slide Auto-Designer")
-st.caption(
-    "Generate MNC-grade, infographic-style presentations. Includes auto-indexing, "
-    "introduction slides, and smart photo placement (e.g., CBNAAT machines)."
+
+# ============================================================
+# AMC NTEP PROFESSIONAL PPT AUTO-DESIGNER
+# ============================================================
+
+st.set_page_config(
+    page_title="AMC NTEP Professional PPT Designer",
+    page_icon="📊",
+    layout="wide",
 )
 
-# ----------------------------------------------------------------------
-# THEME & BRANDING
-# ----------------------------------------------------------------------
-NAVY = RGBColor(0x14, 0x2C, 0x5C)
-NAVY_LIGHT = RGBColor(0x28, 0x49, 0x86)
+# -----------------------------
+# Theme
+# -----------------------------
+NAVY = RGBColor(0x0D, 0x35, 0x68)
+NAVY2 = RGBColor(0x16, 0x4A, 0x7D)
+BLUE = RGBColor(0x1F, 0x68, 0xB2)
+TEAL = RGBColor(0x00, 0x91, 0x87)
 GREEN = RGBColor(0x1F, 0xA6, 0x8C)
-BLUE_ICON = RGBColor(0x1F, 0x5C, 0xC9)
-BG_LIGHT = RGBColor(0xF4, 0xF7, 0xFB)  # Slightly softer background
-CARD_WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+CYAN = RGBColor(0x00, 0xA6, 0xC7)
+ORANGE = RGBColor(0xF2, 0x8C, 0x28)
+RED = RGBColor(0xD9, 0x3B, 0x30)
+PURPLE = RGBColor(0x6D, 0x4C, 0xB8)
+BG = RGBColor(0xF3, 0xF7, 0xFA)
 WHITE = RGBColor(0xFF, 0xFF, 0xFF)
-TEXT_DARK = RGBColor(0x22, 0x2B, 0x3A)
-TEXT_GRAY = RGBColor(0x46, 0x50, 0x60)
-HIGHLIGHT_BG = RGBColor(0xC9, 0xF3, 0xEE)
-HIGHLIGHT_TEXT = RGBColor(0x0B, 0x6E, 0x5D)
-ORANGE_ACCENT = RGBColor(0xF2, 0x99, 0x4A)
+DARK = RGBColor(0x1F, 0x2D, 0x3D)
+GRAY = RGBColor(0x5B, 0x67, 0x73)
+LIGHT_BLUE = RGBColor(0xE5, 0xF1, 0xFA)
+LIGHT_GREEN = RGBColor(0xE4, 0xF5, 0xF1)
+LIGHT_ORANGE = RGBColor(0xFF, 0xF0, 0xDF)
+LIGHT_RED = RGBColor(0xFD, 0xE9, 0xE7)
+LIGHT_PURPLE = RGBColor(0xEF, 0xE9, 0xFA)
 
 FONT = "Noto Sans Gujarati"
-FONT_TTF_REGULAR = "NotoSansGujarati-Regular.ttf"
-FONT_TTF_BOLD = "NotoSansGujarati-Bold.ttf"
-MEASURE_DPI = 96
 
-SLIDE_W, SLIDE_H = Inches(13.333), Inches(7.5)
-MARGIN_X, HEADER_H = Inches(0.55), Inches(1.25)
-BODY_TOP = HEADER_H + Inches(0.32)
-BODY_BOTTOM_MARGIN = Inches(0.4)
-COL_GAP, CARD_GAP_V, CARD_PAD = Inches(0.28), Inches(0.2), Inches(0.16)
+SLIDE_W = Inches(13.333)
+SLIDE_H = Inches(7.5)
 
-FIELD_META = {
-    "OBJ": {"label": "ઉદ્દેશ્ય (Objective)", "icon": "target", "color": GREEN, "bullet": False},
-    "STEPS": {"label": "શું કરવું? (What to do?)", "icon": "gear", "color": BLUE_ICON, "bullet": True},
-    "WHO": {"label": "જવાબદાર વ્યક્તિ (Responsible Person)", "icon": "people", "color": ORANGE_ACCENT, "bullet": False},
-    "TIME": {"label": "સમયમર્યાદા (Timeline)", "icon": "clock", "color": GREEN, "bullet": False},
-    "IND": {"label": "મોનિટરિંગ સૂચકાંકો (Monitoring Indicators)", "icon": "chart", "color": HIGHLIGHT_TEXT, "bullet": True},
-}
-FIELD_ORDER = ["OBJ", "STEPS", "WHO", "TIME", "IND"]
+MARGIN_X = Inches(0.48)
+BODY_TOP = Inches(1.40)
+BODY_BOTTOM = Inches(0.35)
+GAP = Inches(0.22)
 
-# ----------------------------------------------------------------------
-# 1. ENHANCED WORD PARSER (Handles Intro, Purpose, Index)
-# ----------------------------------------------------------------------
+
+# ============================================================
+# Word parsing
+# ============================================================
+
+MODULE_RE = re.compile(
+    r"^(?:Module|MODULE|મોડ્યુલ)\s*(\d+)\s*[:：\-]?\s*(.*)$",
+    re.IGNORECASE,
+)
+
+SUBMODULE_RE = re.compile(
+    r"^(\d+)\.(\d+)\s*[:：\-]?\s*(.*)$"
+)
+
 FIELD_PATTERNS = [
-    ("OBJ", r"^ઉદ્દેશ્ય"),
-    ("STEPS", r"^શું કરવું\??"),
-    ("WHO", r"^જવાબદાર વ્યક્તિ"),
-    ("TIME", r"^(સમયમર્યાદા|અમલીકરણનો સમય)"),
-    ("IND", r"^મોનિટરિંગ સૂચકાંકો"),
+    ("OBJ", r"^(?:ઉદ્દેશ્ય|objective)\b"),
+    ("STEPS", r"^(?:શું કરવું|what to do)\b"),
+    ("WHO", r"^(?:જવાબદાર વ્યક્તિ|જવાબદાર વ્યક્તિઓ|responsible person|responsible)\b"),
+    ("TIME", r"^(?:સમયમર્યાદા|અમલીકરણનો સમય|timeline|time)\b"),
+    ("IND", r"^(?:મોનિટરિંગ સૂચકાંકો|monitoring indicators|monitoring)\b"),
+    ("WHY", r"^(?:શા માટે મહત્વપૂર્ણ|શા માટે|why important|importance)\b"),
+    ("RISK", r"^(?:જોખમ|risks|risk if not done)\b"),
+    ("DOC", r"^(?:દસ્તાવેજીકરણ|documentation)\b"),
+    ("TRIGGER", r"^(?:ટ્રિગર|trigger)\b"),
 ]
-MODULE_RE = re.compile(r"^(Module|મોડ્યુલ)\s*(\d+)\s*[:：]?\s*(.*)$", re.IGNORECASE)
-SUBMODULE_RE = re.compile(r"^(\d+)\.(\d+)\s+(.*)$")
 
-def strip_label(text, pattern):
-    return re.sub(pattern + r"[^:：]*[:：]?", "", text, flags=re.IGNORECASE).strip()
+
+def clean_text(text):
+    text = re.sub(r"\s+", " ", text or "").strip()
+    return text
+
+
+def strip_field_label(text, pattern):
+    return re.sub(pattern + r"\s*[:：\-]?\s*", "", text, flags=re.I).strip()
+
 
 def parse_word(docx_file):
     doc = docx.Document(docx_file)
-    data = {"intro": [], "purpose": [], "objectives": [], "modules": {}}
-    cur_mod, cur_sub, cur_field, cur_section = None, None, None, "intro"
 
-    for para in doc.paragraphs:
-        text = para.text.strip()
-        if not text: continue
+    modules = {}
+    current_module = None
+    current_sub = None
+    current_field = None
 
-        # Global Sections
-        if "પ્રસ્તાવના" in text: cur_section = "intro"; continue
-        if "હેતુ" in text and not cur_mod: cur_section = "purpose"; continue
-        if "મુખ્ય ઉદ્દેશ્યો" in text and not cur_mod: cur_section = "objectives"; continue
+    for p in doc.paragraphs:
+        text = clean_text(p.text)
+        if not text:
+            continue
 
         m = MODULE_RE.match(text)
         if m:
-            cur_section = "modules"
-            cur_mod = m.group(2)
-            data["modules"].setdefault(cur_mod, {"title": m.group(3).strip(), "subs": {}})
-            cur_sub, cur_field = None, None
+            current_module = m.group(1)
+            modules.setdefault(
+                current_module,
+                {"title": m.group(2).strip(), "subs": {}},
+            )
+            current_sub = None
+            current_field = None
             continue
 
         s = SUBMODULE_RE.match(text)
         if s:
-            main_num, sub_num = s.group(1), s.group(2)
-            cur_mod = main_num if cur_mod is None else cur_mod
-            data["modules"].setdefault(cur_mod, {"title": "", "subs": {}})
-            cur_sub = f"{main_num}.{sub_num}"
-            data["modules"][cur_mod]["subs"][cur_sub] = {
-                "title": text, "OBJ": [], "STEPS": [], "WHO": [], "TIME": [], "IND": []
+            mod_no = s.group(1)
+            sub_no = f"{s.group(1)}.{s.group(2)}"
+            current_module = mod_no
+
+            modules.setdefault(
+                current_module,
+                {"title": "", "subs": {}},
+            )
+
+            title = s.group(3).strip()
+            modules[current_module]["subs"][sub_no] = {
+                "number": sub_no,
+                "title": title if title else text,
+                "OBJ": [],
+                "STEPS": [],
+                "WHO": [],
+                "TIME": [],
+                "IND": [],
+                "WHY": [],
+                "RISK": [],
+                "DOC": [],
+                "TRIGGER": [],
+                "OTHER": [],
             }
-            cur_field = None
+
+            current_sub = sub_no
+            current_field = None
             continue
 
-        if cur_section != "modules" and not cur_sub:
-            data[cur_section].append(text)
+        if current_sub is None:
             continue
-
-        if not cur_sub: continue
 
         matched = False
-        for key, pat in FIELD_PATTERNS:
-            if re.match(pat, text):
-                val = strip_label(text, pat)
-                cur_field = key
-                if val: data["modules"][cur_mod]["subs"][cur_sub][key].append(val)
+
+        for key, pattern in FIELD_PATTERNS:
+            if re.match(pattern, text, flags=re.I):
+                value = strip_field_label(text, pattern)
+                current_field = key
+                if value:
+                    modules[current_module]["subs"][current_sub][key].append(value)
                 matched = True
                 break
-        
-        if not matched and cur_field:
-            data["modules"][cur_mod]["subs"][cur_sub][cur_field].append(text)
 
-    return data
+        if matched:
+            continue
 
-# ----------------------------------------------------------------------
-# 2. DRAWING PRIMITIVES & ICONS (Retained & Optimized)
-# ----------------------------------------------------------------------
-_FONT_CACHE = {}
-def _pil_font(size_pt, bold=False):
-    key = (round(size_pt, 1), bold)
-    if key not in _FONT_CACHE:
-        path = FONT_TTF_BOLD if bold else FONT_TTF_REGULAR
-        try:
-            _FONT_CACHE[key] = ImageFont.truetype(path, max(1, int(size_pt / 72 * MEASURE_DPI)))
-        except OSError:
-            _FONT_CACHE[key] = ImageFont.load_default()
-    return _FONT_CACHE[key]
-
-def wrap_text(text, size_pt, max_width_in):
-    font = _pil_font(size_pt)
-    max_width_px = max_width_in * MEASURE_DPI
-    words = text.split(" ")
-    lines, cur = [], ""
-    for w in words:
-        trial = (cur + " " + w).strip()
-        length = font.getlength(trial) if hasattr(font, 'getlength') else font.getsize(trial)[0]
-        if length <= max_width_px or not cur:
-            cur = trial
+        if current_field:
+            modules[current_module]["subs"][current_sub][current_field].append(text)
         else:
-            lines.append(cur)
-            cur = w
-    if cur: lines.append(cur)
+            modules[current_module]["subs"][current_sub]["OTHER"].append(text)
+
+    # If Word uses headings without explicit "Module", infer module title
+    for mod_no, mod in modules.items():
+        if not mod["title"]:
+            mod["title"] = f"Module {mod_no}"
+
+    return modules
+
+
+# ============================================================
+# Text utilities
+# ============================================================
+
+def all_text(items):
+    return " ".join([x for x in items if x]).strip()
+
+
+def wrap_text(text, max_chars):
+    words = text.split()
+    lines = []
+    current = ""
+    for word in words:
+        test = f"{current} {word}".strip()
+        if len(test) <= max_chars:
+            current = test
+        else:
+            if current:
+                lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
     return lines or [""]
 
-def item_height_in(item, size_pt, max_width_in, bullet, line_spacing=1.18, item_gap_in=0.05):
-    prefix_w = 0.22 if bullet else 0.0
-    lines = wrap_text(item, size_pt, max_width_in - prefix_w)
-    return len(lines) * size_pt * line_spacing / 72 + item_gap_in
 
-def chunk_items(items, max_width_in, avail_h_in, bullet):
-    if not items: return 12, []
-    best = None
-    for size in (12, 11, 10, 9.5):
-        chunks, cur, cur_h = [], [], 0.0
-        for it in items:
-            h = item_height_in(it, size, max_width_in, bullet)
-            if cur and cur_h + h > avail_h_in:
-                chunks.append(cur); cur, cur_h = [it], h
-            else:
-                cur.append(it); cur_h += h
-        if cur: chunks.append(cur)
-        if best is None or len(chunks) < best[0]: best = (len(chunks), size, chunks)
-        if len(chunks) == 1: break
-    return best[1], best[2]
+def add_text(
+    slide, x, y, w, h, text,
+    size=18,
+    color=DARK,
+    bold=False,
+    align=PP_ALIGN.LEFT,
+    anchor=MSO_ANCHOR.TOP,
+    font=FONT,
+):
+    box = slide.shapes.add_textbox(x, y, w, h)
+    tf = box.text_frame
+    tf.clear()
+    tf.word_wrap = True
+    tf.vertical_anchor = anchor
+    tf.margin_left = tf.margin_right = Inches(0.02)
+    tf.margin_top = tf.margin_bottom = Inches(0.01)
 
-def add_rect(slide, x, y, w, h, fill, radius=None, shadow=False):
-    shape_type = MSO_SHAPE.ROUNDED_RECTANGLE if radius is not None else MSO_SHAPE.RECTANGLE
-    shp = slide.shapes.add_shape(shape_type, x, y, w, h)
-    if radius:
-        try: shp.adjustments[0] = radius
-        except: pass
-    shp.fill.solid(); shp.fill.fore_color.rgb = fill
-    shp.line.fill.background(); shp.shadow.inherit = False
+    paragraphs = str(text).split("\n")
+
+    for i, line in enumerate(paragraphs):
+        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+        p.alignment = align
+        p.line_spacing = 1.12
+        r = p.add_run()
+        r.text = line
+        r.font.name = font
+        r.font.size = Pt(size)
+        r.font.bold = bold
+        r.font.color.rgb = color
+
+    return box
+
+
+def add_bullets(
+    slide, x, y, w, h, items,
+    size=15,
+    color=GRAY,
+    bullet=True,
+    gap=4,
+):
+    box = slide.shapes.add_textbox(x, y, w, h)
+    tf = box.text_frame
+    tf.clear()
+    tf.word_wrap = True
+    tf.margin_left = tf.margin_right = Inches(0.02)
+    tf.margin_top = tf.margin_bottom = Inches(0.01)
+
+    for i, item in enumerate(items):
+        if not item:
+            continue
+        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+        p.space_after = Pt(gap)
+        p.line_spacing = 1.08
+
+        r = p.add_run()
+        r.text = ("• " if bullet else "") + item
+        r.font.name = FONT
+        r.font.size = Pt(size)
+        r.font.color.rgb = color
+
+    return box
+
+
+# ============================================================
+# Shapes
+# ============================================================
+
+def fill_shape(shape, fill, line=None):
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = fill
+    if line is None:
+        shape.line.fill.background()
+    else:
+        shape.line.color.rgb = line
+
+
+def rounded_rect(slide, x, y, w, h, fill=WHITE, line=None, radius=True):
+    typ = MSO_SHAPE.ROUNDED_RECTANGLE if radius else MSO_SHAPE.RECTANGLE
+    shp = slide.shapes.add_shape(typ, x, y, w, h)
+    fill_shape(shp, fill, line)
     return shp
 
-def add_text(slide, x, y, w, h, text, size, color, bold=False, align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP):
-    tb = slide.shapes.add_textbox(x, y, w, h)
-    tf = tb.text_frame
-    tf.word_wrap = True; tf.vertical_anchor = anchor
-    tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = Emu(0)
-    for i, line in enumerate(text.split("\n")):
-        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-        p.alignment = align; p.line_spacing = 1.18
-        r = p.add_run(); r.text = line; r.font.size = Pt(size); r.font.bold = bold
-        r.font.name = FONT; r.font.color.rgb = color
-    return tb
 
-# ----------------------------------------------------------------------
-# 3. SLIDE BUILDERS (Intro, Index, Submodules)
-# ----------------------------------------------------------------------
-def draw_card(slide, x, y, w, h, field_key, size_pt, items, highlight=False):
-    meta = FIELD_META[field_key]
-    bg = HIGHLIGHT_BG if highlight else CARD_WHITE
-    add_rect(slide, x, y, w, h, bg, radius=0.06, shadow=True)
-    
-    pad, icon_d = CARD_PAD, Inches(0.34)
-    # Placeholder for icons (simplification for brevity, use existing icon functions here)
-    add_text(slide, x + pad, y + pad, w - pad*2, icon_d, meta["label"], 12, NAVY, bold=True)
-    
-    body_y = y + pad + icon_d + Inches(0.10)
-    tb = slide.shapes.add_textbox(x + pad, body_y, w - 2*pad, h - (body_y - y) - pad)
-    tf = tb.text_frame; tf.word_wrap = True
-    tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = Emu(0)
-    
-    for i, item in enumerate(items):
-        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-        p.line_spacing = 1.18; p.space_after = Pt(4)
-        r = p.add_run(); r.text = (f"•  {item}" if meta["bullet"] else item)
-        r.font.size = Pt(size_pt); r.font.name = FONT
-        r.font.color.rgb = HIGHLIGHT_TEXT if highlight else TEXT_GRAY
+def circle(slide, x, y, d, fill):
+    shp = slide.shapes.add_shape(MSO_SHAPE.OVAL, x, y, d, d)
+    fill_shape(shp, fill)
+    return shp
 
-def create_title_slide(prs, logos):
+
+def line(slide, x1, y1, x2, y2, color=BLUE, width=2):
+    shp = slide.shapes.add_connector(
+        1, x1, y1, x2, y2
+    )
+    shp.line.color.rgb = color
+    shp.line.width = Pt(width)
+    return shp
+
+
+def add_shadow(shape):
+    # Safe/simple PowerPoint shadow effect.
+    try:
+        shape.shadow.inherit = False
+    except Exception:
+        pass
+
+
+def add_icon_badge(slide, x, y, d, symbol, fill=TEAL):
+    circle(slide, x, y, d, fill)
+    add_text(
+        slide, x, y + Inches(0.01), d, d,
+        symbol, size=20, color=WHITE,
+        bold=True, align=PP_ALIGN.CENTER,
+        anchor=MSO_ANCHOR.MIDDLE,
+        font="Arial",
+    )
+
+
+# ============================================================
+# Asset handling
+# ============================================================
+
+def save_uploaded_assets(uploaded_files, asset_dir="assets"):
+    path = Path(asset_dir)
+    path.mkdir(parents=True, exist_ok=True)
+
+    saved = []
+
+    for f in uploaded_files:
+        target = path / f.name
+        target.write_bytes(f.getbuffer())
+        saved.append(str(target))
+
+    return saved
+
+
+def load_image_bytes(file_obj):
+    if file_obj is None:
+        return None
+    return io.BytesIO(file_obj.getvalue())
+
+
+def add_picture_contain(slide, image_source, x, y, w, h):
+    if image_source is None:
+        return False
+
+    try:
+        if hasattr(image_source, "seek"):
+            image_source.seek(0)
+        slide.shapes.add_picture(image_source, x, y, width=w, height=h)
+        return True
+    except Exception:
+        return False
+
+
+def find_asset(asset_files, keywords):
+    """
+    Match an uploaded filename to content keywords.
+    Example:
+      CBNAAT.png -> ["cbnaat", "naat"]
+    """
+    if not asset_files:
+        return None
+
+    for file in asset_files:
+        name = Path(file).stem.lower()
+        for key in keywords:
+            if key.lower() in name:
+                return file
+
+    return None
+
+
+def keyword_group_for_submodule(sub):
+    text = (
+        sub["number"] + " " +
+        sub["title"] + " " +
+        all_text(sub.get("OBJ", [])) + " " +
+        all_text(sub.get("STEPS", [])) + " " +
+        all_text(sub.get("OTHER", []))
+    ).lower()
+
+    groups = []
+
+    if any(k in text for k in ["cbnaat", "cb-gaat", "cartridge", "gene xpert"]):
+        groups.append(["cbnaat", "gene", "cartridge"])
+
+    if any(k in text for k in ["truenat", "true nat"]):
+        groups.append(["truenat"])
+
+    if any(k in text for k in ["microscope", "microscopy", "માઇક્રોસ્કોપ"]):
+        groups.append(["microscope", "microscopy"])
+
+    if any(k in text for k in ["migration", "સ્થળાંતર", "transfer out", "transfer in"]):
+        groups.append(["migration", "map", "transfer"])
+
+    if any(k in text for k in ["hiv", "diabetes", "diabetes mellitus"]):
+        groups.append(["hiv", "diabetes", "screening"])
+
+    if any(k in text for k in ["notification", "nikshay", "નિક્ષય"]):
+        groups.append(["nikshay", "notification"])
+
+    return groups
+
+
+# ============================================================
+# Header/footer
+# ============================================================
+
+def add_background(slide):
+    rounded_rect(
+        slide, 0, 0, SLIDE_W, SLIDE_H,
+        BG, radius=False
+    )
+
+    # Decorative circles
+    circle(slide, Inches(11.9), Inches(-0.55), Inches(1.45), LIGHT_BLUE)
+    circle(slide, Inches(12.35), Inches(6.6), Inches(1.2), LIGHT_GREEN)
+
+
+def add_logo(slide, file_obj, x, y, w, h):
+    if file_obj is None:
+        return
+    try:
+        file_obj.seek(0)
+        slide.shapes.add_picture(file_obj, x, y, width=w, height=h)
+    except Exception:
+        pass
+
+
+def add_header(
+    slide,
+    module_no,
+    module_title,
+    sub_title=None,
+    left_logo=None,
+    right_logo=None,
+    section="Public Health Actions",
+):
+    add_background(slide)
+
+    # Header band
+    rounded_rect(
+        slide, 0, 0, SLIDE_W, Inches(1.08),
+        NAVY, radius=False
+    )
+
+    if left_logo:
+        add_logo(
+            slide, left_logo,
+            Inches(0.22), Inches(0.13),
+            Inches(0.78), Inches(0.78)
+        )
+
+    if right_logo:
+        add_logo(
+            slide, right_logo,
+            Inches(12.25), Inches(0.13),
+            Inches(0.78), Inches(0.78)
+        )
+
+    add_text(
+        slide,
+        Inches(1.15), Inches(0.10),
+        Inches(10.7), Inches(0.30),
+        f"{section}  •  Module {module_no}",
+        size=12,
+        color=RGBColor(0xB9, 0xD8, 0xF5),
+        bold=True,
+    )
+
+    title = sub_title if sub_title else module_title
+
+    add_text(
+        slide,
+        Inches(1.15), Inches(0.40),
+        Inches(10.7), Inches(0.52),
+        title,
+        size=22,
+        color=WHITE,
+        bold=True,
+        anchor=MSO_ANCHOR.MIDDLE,
+    )
+
+
+def add_footer(slide, slide_no):
+    line(
+        slide,
+        Inches(0.48), Inches(7.12),
+        Inches(12.85), Inches(7.12),
+        RGBColor(0xD4, 0xDF, 0xE8),
+        1,
+    )
+
+    add_text(
+        slide,
+        Inches(0.50), Inches(7.15),
+        Inches(9), Inches(0.20),
+        "Ahmedabad Municipal Corporation • NTEP • Public Health Actions",
+        size=7.5,
+        color=GRAY,
+    )
+
+    add_text(
+        slide,
+        Inches(11.7), Inches(7.13),
+        Inches(1.1), Inches(0.22),
+        str(slide_no),
+        size=9,
+        color=NAVY,
+        bold=True,
+        align=PP_ALIGN.RIGHT,
+    )
+
+
+# ============================================================
+# Visual cards
+# ============================================================
+
+FIELD_STYLE = {
+    "OBJ": ("ઉદ્દેશ્ય (Objective)", TEAL, LIGHT_GREEN, "◎"),
+    "STEPS": ("શું કરવું? (What to do)", BLUE, LIGHT_BLUE, "⚙"),
+    "WHO": ("જવાબદાર વ્યક્તિ (Responsible)", PURPLE, LIGHT_PURPLE, "●"),
+    "TIME": ("સમયમર્યાદા (Timeline)", GREEN, LIGHT_GREEN, "◷"),
+    "IND": ("મોનિટરિંગ સૂચકાંકો", TEAL, LIGHT_GREEN, "▥"),
+    "WHY": ("શા માટે મહત્વપૂર્ણ?", ORANGE, LIGHT_ORANGE, "!"),
+    "RISK": ("જોખમ / Risks", RED, LIGHT_RED, "!"),
+    "DOC": ("દસ્તાવેજીકરણ", NAVY2, LIGHT_BLUE, "▤"),
+    "TRIGGER": ("Trigger", ORANGE, LIGHT_ORANGE, "↗"),
+}
+
+
+def draw_info_card(
+    slide, x, y, w, h,
+    field_key,
+    items,
+    photo=None,
+    number=None,
+):
+    label, accent, light, icon = FIELD_STYLE.get(
+        field_key,
+        ("Key Information", BLUE, LIGHT_BLUE, "•")
+    )
+
+    card = rounded_rect(
+        slide, x, y, w, h,
+        WHITE,
+        line=RGBColor(0xD8, 0xE1, 0xE8),
+    )
+    add_shadow(card)
+
+    # accent strip
+    rounded_rect(
+        slide, x, y, Inches(0.07), h,
+        accent, radius=False
+    )
+
+    # icon
+    add_icon_badge(
+        slide,
+        x + Inches(0.18),
+        y + Inches(0.16),
+        Inches(0.43),
+        icon,
+        accent,
+    )
+
+    add_text(
+        slide,
+        x + Inches(0.72),
+        y + Inches(0.13),
+        w - Inches(0.9),
+        Inches(0.35),
+        label,
+        size=12,
+        color=NAVY,
+        bold=True,
+    )
+
+    body_x = x + Inches(0.22)
+    body_y = y + Inches(0.64)
+    body_w = w - Inches(0.44)
+    body_h = h - Inches(0.78)
+
+    if photo:
+        photo_w = min(Inches(2.05), body_w * 0.34)
+        try:
+            photo.seek(0)
+            slide.shapes.add_picture(
+                photo,
+                body_x,
+                body_y,
+                width=photo_w,
+                height=body_h,
+            )
+            body_x += photo_w + Inches(0.15)
+            body_w -= photo_w + Inches(0.15)
+        except Exception:
+            pass
+
+    if number is not None:
+        circle(
+            slide,
+            body_x,
+            body_y,
+            Inches(0.34),
+            accent,
+        )
+        add_text(
+            slide,
+            body_x,
+            body_y,
+            Inches(0.34),
+            Inches(0.34),
+            str(number),
+            size=10,
+            color=WHITE,
+            bold=True,
+            align=PP_ALIGN.CENTER,
+            anchor=MSO_ANCHOR.MIDDLE,
+            font="Arial",
+        )
+        body_x += Inches(0.48)
+        body_w -= Inches(0.48)
+
+    if field_key == "STEPS":
+        add_bullets(
+            slide,
+            body_x,
+            body_y,
+            body_w,
+            body_h,
+            items,
+            size=13,
+            color=GRAY,
+            bullet=True,
+        )
+    else:
+        add_bullets(
+            slide,
+            body_x,
+            body_y,
+            body_w,
+            body_h,
+            items,
+            size=13,
+            color=GRAY,
+            bullet=False,
+        )
+
+
+# ============================================================
+# Layouts
+# ============================================================
+
+def build_cover(prs, left_logo, right_logo, title):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
-    add_rect(slide, 0, 0, SLIDE_W, SLIDE_H, NAVY)
-    add_text(slide, Inches(1), Inches(2.5), SLIDE_W - Inches(2), Inches(1), 
-             "Public Health Actions of TB Department", 36, WHITE, bold=True, align=PP_ALIGN.CENTER)
-    add_text(slide, Inches(1), Inches(3.5), SLIDE_W - Inches(2), Inches(1), 
-             "Ahmedabad Municipal Corporation", 24, ORANGE_ACCENT, bold=True, align=PP_ALIGN.CENTER)
-    
-    if logos[0]: slide.shapes.add_picture(logos[0], Inches(0.5), Inches(0.5), height=Inches(1.2))
-    if logos[1]: slide.shapes.add_picture(logos[1], SLIDE_W - Inches(1.7), Inches(0.5), height=Inches(1.2))
+    add_background(slide)
 
-def create_index_slide(prs, toc_data):
+    rounded_rect(
+        slide, 0, 0, SLIDE_W, SLIDE_H,
+        NAVY, radius=False
+    )
+
+    # Decorative graphic
+    circle(
+        slide, Inches(9.6), Inches(-0.5),
+        Inches(4.5), NAVY2
+    )
+    circle(
+        slide, Inches(10.5), Inches(4.8),
+        Inches(3.8), TEAL
+    )
+
+    if left_logo:
+        add_logo(
+            slide, left_logo,
+            Inches(0.55), Inches(0.42),
+            Inches(1.25), Inches(1.25)
+        )
+
+    if right_logo:
+        add_logo(
+            slide, right_logo,
+            Inches(11.45), Inches(0.42),
+            Inches(1.25), Inches(1.25)
+        )
+
+    add_text(
+        slide,
+        Inches(1.1), Inches(2.05),
+        Inches(11.1), Inches(0.55),
+        "રાષ્ટ્રીય ક્ષયરોગ નિવારણ કાર્યક્રમ (NTEP)",
+        size=18,
+        color=RGBColor(0xB8, 0xDD, 0xF8),
+        bold=True,
+        align=PP_ALIGN.CENTER,
+    )
+
+    add_text(
+        slide,
+        Inches(1.0), Inches(2.75),
+        Inches(11.3), Inches(1.4),
+        title,
+        size=32,
+        color=WHITE,
+        bold=True,
+        align=PP_ALIGN.CENTER,
+        anchor=MSO_ANCHOR.MIDDLE,
+    )
+
+    add_text(
+        slide,
+        Inches(2.0), Inches(4.35),
+        Inches(9.3), Inches(0.5),
+        "Public Health Actions • Ahmedabad Municipal Corporation",
+        size=17,
+        color=RGBColor(0xD5, 0xE9, 0xF8),
+        align=PP_ALIGN.CENTER,
+    )
+
+    add_text(
+        slide,
+        Inches(2.2), Inches(5.2),
+        Inches(8.9), Inches(0.8),
+        "Training & Implementation Guide",
+        size=18,
+        color=WHITE,
+        bold=True,
+        align=PP_ALIGN.CENTER,
+    )
+
+    add_footer(slide, 1)
+
+
+def build_intro_slide(prs, title, items, slide_no, left_logo, right_logo):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
-    add_rect(slide, 0, 0, SLIDE_W, SLIDE_H, BG_LIGHT)
-    add_rect(slide, 0, 0, SLIDE_W, HEADER_H, NAVY)
-    add_text(slide, Inches(0.5), Inches(0.3), SLIDE_W, Inches(0.8), "Table of Contents (અનુક્રમણિકા)", 28, WHITE, bold=True)
-    
-    y_offset = HEADER_H + Inches(0.3)
-    for mod, page in toc_data:
-        add_text(slide, Inches(1), y_offset, SLIDE_W - Inches(2), Inches(0.4), 
-                 f"{mod} .............................................................. Slide {page}", 14, TEXT_DARK, bold=True)
-        y_offset += Inches(0.4)
+    add_header(
+        slide,
+        "",
+        title,
+        title,
+        left_logo,
+        right_logo,
+        section="Introduction",
+    )
 
-def build_submodule_slides(prs, module_num, module_title, sub_num, sub, logos, photo_dict):
-    col_w_emu = (SLIDE_W - 2 * MARGIN_X - COL_GAP) // 2
-    content_w_in = col_w_emu / 914400 - (CARD_PAD / 914400) * 2
-    body_h_in = (SLIDE_H - BODY_TOP - BODY_BOTTOM_MARGIN) / 914400
-    slide_indices = []
+    # large objective-style visual
+    add_icon_badge(
+        slide,
+        Inches(0.65), Inches(1.65),
+        Inches(1.0), "✓", TEAL
+    )
 
-    # Process items and calculate heights (abbreviated logic to fit)
+    add_text(
+        slide,
+        Inches(1.9), Inches(1.55),
+        Inches(10.5), Inches(0.65),
+        title,
+        size=25,
+        color=NAVY,
+        bold=True,
+    )
+
+    add_bullets(
+        slide,
+        Inches(1.9), Inches(2.25),
+        Inches(10.2), Inches(3.8),
+        items,
+        size=17,
+        color=DARK,
+        bullet=True,
+        gap=10,
+    )
+
+    add_footer(slide, slide_no)
+
+
+def build_index_slide(prs, modules, slide_no, left_logo, right_logo):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
-    slide_indices.append(len(prs.slides))
-    
-    # Header
-    add_rect(slide, 0, 0, SLIDE_W, SLIDE_H, BG_LIGHT)
-    add_rect(slide, 0, 0, SLIDE_W, HEADER_H, NAVY)
-    add_text(slide, Inches(0.5), Inches(0.3), SLIDE_W - Inches(1), Inches(0.6), 
-             f"Module {module_num}: {module_title} - {sub['title']}", 20, WHITE, bold=True)
+    add_header(
+        slide, "", "Module Index",
+        "મોડ્યુલ ઇન્ડેક્સ / Module Index",
+        left_logo, right_logo,
+        section="Contents",
+    )
 
-    y_pos = BODY_TOP
-    for key in FIELD_ORDER:
-        items = sub.get(key, [])
-        if not items: continue
-        
-        # Look for photos based on keyword triggers
-        image_placed = False
-        text_content = " ".join(items).lower()
-        if "cbnaat" in text_content and "cbnaat" in photo_dict:
-            slide.shapes.add_picture(photo_dict["cbnaat"], SLIDE_W - Inches(3.5), y_pos, width=Inches(3))
-            w = col_w_emu # reduce width if image placed
-            image_placed = True
+    all_subs = []
+    for mod_no, mod in sorted(modules.items(), key=lambda z: int(z[0])):
+        all_subs.extend(
+            [(mod_no, mod["title"], sub_no, sub["title"])
+             for sub_no, sub in sorted(
+                 mod["subs"].items(),
+                 key=lambda z: tuple(map(int, z[0].split(".")))
+             )]
+        )
+
+    # Index is generated from estimated final order.
+    rows = all_subs[:24]
+
+    cols = 2
+    rows_per_col = math.ceil(len(rows) / cols)
+
+    for col in range(cols):
+        subset = rows[col * rows_per_col:(col + 1) * rows_per_col]
+        x = Inches(0.65 + col * 6.15)
+        y = Inches(1.55)
+
+        for i, (mod_no, mod_title, sub_no, sub_title) in enumerate(subset):
+            yy = y + Inches(0.38) * i
+
+            rounded_rect(
+                slide,
+                x, yy,
+                Inches(5.65), Inches(0.31),
+                WHITE,
+                line=RGBColor(0xD8, 0xE1, 0xE8),
+            )
+
+            circle(
+                slide,
+                x + Inches(0.06), yy + Inches(0.04),
+                Inches(0.23), NAVY2
+            )
+
+            add_text(
+                slide,
+                x + Inches(0.06), yy + Inches(0.04),
+                Inches(0.23), Inches(0.23),
+                sub_no,
+                size=6.5,
+                color=WHITE,
+                bold=True,
+                align=PP_ALIGN.CENTER,
+                anchor=MSO_ANCHOR.MIDDLE,
+                font="Arial",
+            )
+
+            display = sub_title[:54] + ("…" if len(sub_title) > 54 else "")
+            add_text(
+                slide,
+                x + Inches(0.37), yy + Inches(0.02),
+                Inches(4.55), Inches(0.26),
+                display,
+                size=8.5,
+                color=DARK,
+                bold=True,
+                anchor=MSO_ANCHOR.MIDDLE,
+            )
+
+            # Page number placeholder
+            add_text(
+                slide,
+                x + Inches(5.02), yy + Inches(0.02),
+                Inches(0.48), Inches(0.26),
+                "—",
+                size=8,
+                color=TEAL,
+                bold=True,
+                align=PP_ALIGN.RIGHT,
+                anchor=MSO_ANCHOR.MIDDLE,
+            )
+
+    add_footer(slide, slide_no)
+
+
+def build_module_overview(
+    prs,
+    module_no,
+    module_title,
+    subs,
+    slide_no,
+    left_logo,
+    right_logo,
+):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+
+    add_header(
+        slide,
+        module_no,
+        module_title,
+        f"Module {module_no}: {module_title}",
+        left_logo,
+        right_logo,
+    )
+
+    add_text(
+        slide,
+        Inches(0.65), Inches(1.35),
+        Inches(11.9), Inches(0.4),
+        "Module Overview",
+        size=19,
+        color=NAVY,
+        bold=True,
+    )
+
+    sub_items = list(subs.items())
+
+    for i, (sub_no, sub) in enumerate(sub_items[:12]):
+        col = i % 3
+        row = i // 3
+
+        x = Inches(0.65) + col * Inches(4.05)
+        y = Inches(1.95) + row * Inches(1.22)
+
+        rounded_rect(
+            slide,
+            x, y,
+            Inches(3.72), Inches(0.96),
+            WHITE,
+            line=RGBColor(0xD8, 0xE1, 0xE8),
+        )
+
+        circle(
+            slide,
+            x + Inches(0.15), y + Inches(0.18),
+            Inches(0.55),
+            [TEAL, BLUE, PURPLE][col],
+        )
+
+        add_text(
+            slide,
+            x + Inches(0.15), y + Inches(0.18),
+            Inches(0.55), Inches(0.55),
+            sub_no,
+            size=9,
+            color=WHITE,
+            bold=True,
+            align=PP_ALIGN.CENTER,
+            anchor=MSO_ANCHOR.MIDDLE,
+            font="Arial",
+        )
+
+        title = sub["title"]
+        add_text(
+            slide,
+            x + Inches(0.85), y + Inches(0.14),
+            Inches(2.68), Inches(0.66),
+            title,
+            size=11,
+            color=DARK,
+            bold=True,
+            anchor=MSO_ANCHOR.MIDDLE,
+        )
+
+    add_footer(slide, slide_no)
+
+
+def build_workflow_slide(
+    prs,
+    module_no,
+    module_title,
+    sub,
+    slide_no,
+    left_logo,
+    right_logo,
+    photo=None,
+):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+
+    add_header(
+        slide,
+        module_no,
+        module_title,
+        f"{sub['number']}  {sub['title']}",
+        left_logo,
+        right_logo,
+    )
+
+    steps = sub.get("STEPS", []) or sub.get("OTHER", [])
+    if not steps:
+        steps = ["મુખ્ય પ્રક્રિયાની માહિતી ઉપલબ્ધ નથી."]
+
+    # Keep workflow readable
+    steps = steps[:8]
+
+    x0 = Inches(0.72)
+    y0 = Inches(1.72)
+    card_w = Inches(2.72)
+    card_h = Inches(1.12)
+
+    for i, step in enumerate(steps):
+        row = i // 4
+        col = i % 4
+
+        x = x0 + col * Inches(3.05)
+        y = y0 + row * Inches(1.62)
+
+        rounded_rect(
+            slide, x, y,
+            card_w, card_h,
+            WHITE,
+            line=RGBColor(0xD8, 0xE1, 0xE8),
+        )
+
+        circle(
+            slide,
+            x + Inches(0.14),
+            y + Inches(0.16),
+            Inches(0.47),
+            TEAL if i % 2 == 0 else BLUE,
+        )
+
+        add_text(
+            slide,
+            x + Inches(0.14),
+            y + Inches(0.16),
+            Inches(0.47),
+            Inches(0.47),
+            str(i + 1),
+            size=9,
+            color=WHITE,
+            bold=True,
+            align=PP_ALIGN.CENTER,
+            anchor=MSO_ANCHOR.MIDDLE,
+            font="Arial",
+        )
+
+        lines = wrap_text(step, 48)
+        add_text(
+            slide,
+            x + Inches(0.75),
+            y + Inches(0.12),
+            Inches(1.80),
+            Inches(0.84),
+            "\n".join(lines[:5]),
+            size=11.5,
+            color=DARK,
+            bold=True,
+            anchor=MSO_ANCHOR.MIDDLE,
+        )
+
+        if i < len(steps) - 1 and col < 3:
+            line(
+                slide,
+                x + card_w,
+                y + card_h / 2,
+                x + card_w + Inches(0.30),
+                y + card_h / 2,
+                TEAL,
+                2,
+            )
+
+    # Photo panel when available
+    if photo:
+        rounded_rect(
+            slide,
+            Inches(10.0), Inches(5.15),
+            Inches(2.45), Inches(1.45),
+            WHITE,
+            line=RGBColor(0xD8, 0xE1, 0xE8),
+        )
+        try:
+            photo.seek(0)
+            slide.shapes.add_picture(
+                photo,
+                Inches(10.12), Inches(5.27),
+                width=Inches(2.2),
+                height=Inches(1.18),
+            )
+        except Exception:
+            pass
+
+    add_footer(slide, slide_no)
+
+
+def build_content_slide(
+    prs,
+    module_no,
+    module_title,
+    sub,
+    slide_no,
+    left_logo,
+    right_logo,
+    asset_files=None,
+):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+
+    add_header(
+        slide,
+        module_no,
+        module_title,
+        f"{sub['number']}  {sub['title']}",
+        left_logo,
+        right_logo,
+    )
+
+    # Detect photo
+    photo = None
+    groups = keyword_group_for_submodule(sub)
+
+    for group in groups:
+        asset = find_asset(asset_files, group)
+        if asset:
+            try:
+                photo = open(asset, "rb")
+                break
+            except Exception:
+                pass
+
+    available = []
+
+    for key in ["OBJ", "STEPS", "WHO", "TIME", "IND", "WHY", "RISK", "DOC", "TRIGGER"]:
+        items = [x for x in sub.get(key, []) if x]
+        if items:
+            available.append((key, items))
+
+    if not available:
+        available = [("OBJ", ["માહિતી ઉપલબ્ધ નથી."])]
+
+    # Special workflow layout for many steps
+    if len(sub.get("STEPS", [])) >= 4:
+        build_workflow_slide(
+            prs,
+            module_no,
+            module_title,
+            sub,
+            slide_no,
+            left_logo,
+            right_logo,
+            photo,
+        )
+        # Remove the blank slide created above.
+        xml_slides = prs.slides._sldIdLst
+        xml_slides.remove(xml_slides[-2])
+        return
+
+    # 2-column professional card layout
+    left = []
+    right = []
+
+    for i, item in enumerate(available):
+        (left if i % 2 == 0 else right).append(item)
+
+    def draw_column(items, x):
+        y = Inches(1.55)
+        width = Inches(6.08)
+
+        if not items:
+            return
+
+        remaining = 5.30
+
+        for key, values in items:
+            # Dynamic card height
+            chars = max(45, int(width / Inches(0.12)))
+            lines = 0
+            for value in values:
+                lines += max(1, math.ceil(len(value) / chars))
+
+            h = max(
+                0.98,
+                min(2.35, 0.55 + lines * 0.27 + len(values) * 0.10)
+            )
+
+            if remaining < h:
+                h = max(0.90, remaining)
+
+            draw_info_card(
+                slide,
+                x,
+                y,
+                width,
+                Inches(h),
+                key,
+                values[:8],
+                photo if (key == "OBJ" and photo) else None,
+            )
+
+            y += Inches(h) + GAP
+            remaining -= h + 0.22
+
+            if remaining < 0.65:
+                break
+
+    draw_column(left, Inches(0.52))
+    draw_column(right, Inches(6.73))
+
+    add_footer(slide, slide_no)
+
+
+def build_summary_slide(
+    prs,
+    module_no,
+    module_title,
+    subs,
+    slide_no,
+    left_logo,
+    right_logo,
+):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+
+    add_header(
+        slide,
+        module_no,
+        module_title,
+        "Key Takeaways / મુખ્ય મુદ્દાઓ",
+        left_logo,
+        right_logo,
+    )
+
+    takeaways = []
+
+    for sub_no, sub in list(subs.items())[:8]:
+        obj = all_text(sub.get("OBJ", []))
+        if obj:
+            takeaways.append(f"{sub_no}: {obj}")
         else:
-            w = SLIDE_W - 2 * MARGIN_X
+            takeaways.append(f"{sub_no}: {sub['title']}")
 
-        draw_card(slide, MARGIN_X, y_pos, w, Inches(1.2), key, 12, items, highlight=(key=="IND"))
-        y_pos += Inches(1.4)
+    if not takeaways:
+        takeaways = ["Moduleના મુખ્ય મુદ્દાઓ Word documentમાંથી ઉપલબ્ધ નથી."]
 
-    return slide_indices[0]
+    for i, text in enumerate(takeaways):
+        col = i % 2
+        row = i // 2
 
-# ----------------------------------------------------------------------
-# 4. STREAMLIT UI
-# ----------------------------------------------------------------------
-col1, col2, col3 = st.columns(3)
-with col1: left_logo_file = st.file_uploader("Left Logo (AMC)", type=["png", "jpg"])
-with col2: right_logo_file = st.file_uploader("Right Logo (NTEP)", type=["png", "jpg"])
-with col3: cbnaat_photo = st.file_uploader("CBNAAT Machine Photo (Optional)", type=["png", "jpg"])
+        x = Inches(0.65) + col * Inches(6.15)
+        y = Inches(1.62) + row * Inches(1.05)
 
-uploaded_docx = st.file_uploader("Upload Gujarati Word Document (.docx)", type=["docx"])
+        rounded_rect(
+            slide,
+            x, y,
+            Inches(5.75), Inches(0.82),
+            WHITE,
+            line=RGBColor(0xD8, 0xE1, 0xE8),
+        )
+
+        circle(
+            slide,
+            x + Inches(0.15), y + Inches(0.18),
+            Inches(0.44),
+            TEAL,
+        )
+
+        add_text(
+            slide,
+            x + Inches(0.15), y + Inches(0.18),
+            Inches(0.44), Inches(0.44),
+            "✓",
+            size=10,
+            color=WHITE,
+            bold=True,
+            align=PP_ALIGN.CENTER,
+            anchor=MSO_ANCHOR.MIDDLE,
+            font="Arial",
+        )
+
+        add_text(
+            slide,
+            x + Inches(0.75), y + Inches(0.10),
+            Inches(4.75), Inches(0.62),
+            "\n".join(wrap_text(text, 62)[:3]),
+            size=10.5,
+            color=DARK,
+            bold=True,
+            anchor=MSO_ANCHOR.MIDDLE,
+        )
+
+    add_footer(slide, slide_no)
+
+
+# ============================================================
+# Build presentation
+# ============================================================
+
+def generate_presentation(
+    modules,
+    left_logo,
+    right_logo,
+    title,
+    asset_files,
+    add_module_overviews=True,
+    add_summaries=True,
+):
+    prs = Presentation()
+    prs.slide_width = SLIDE_W
+    prs.slide_height = SLIDE_H
+
+    # Cover
+    build_cover(prs, left_logo, right_logo, title)
+
+    # Intro
+    build_intro_slide(
+        prs,
+        "પ્રસ્તાવના",
+        [
+            "રાષ્ટ્રીય ક્ષયરોગ નિવારણ કાર્યક્રમ અંતર્ગત જાહેર આરોગ્ય કામગીરી માટે માર્ગદર્શન.",
+            "ક્ષયરોગના દર્દીની ઓળખ, તપાસ, નોંધણી, સારવાર અને અનુસરણમાં ગુણવત્તાયુક્ત જાહેર આરોગ્ય કામગીરી.",
+        ],
+        len(prs.slides) + 1,
+        left_logo,
+        right_logo,
+    )
+
+    build_intro_slide(
+        prs,
+        "હેતુ",
+        [
+            "TB સેવાઓને સમયસર, ગુણવત્તાયુક્ત અને દર્દી-કેન્દ્રિત બનાવવી.",
+            "NTEPની જાહેર આરોગ્ય કામગીરીમાં જવાબદારી, મોનિટરિંગ અને documentation મજબૂત કરવું.",
+        ],
+        len(prs.slides) + 1,
+        left_logo,
+        right_logo,
+    )
+
+    build_intro_slide(
+        prs,
+        "માર્ગદર્શિકાના મુખ્ય ઉદ્દેશ્યો",
+        [
+            "Presumptive TBથી treatment અને follow-up સુધીની પ્રક્રિયાને standardize કરવી.",
+            "જવાબદાર વ્યક્તિઓ અને સમયમર્યાદા સ્પષ્ટ કરવી.",
+            "Nikshay documentation અને monitoring indicatorsને મજબૂત બનાવવું.",
+        ],
+        len(prs.slides) + 1,
+        left_logo,
+        right_logo,
+    )
+
+    # Index
+    build_index_slide(
+        prs,
+        modules,
+        len(prs.slides) + 1,
+        left_logo,
+        right_logo,
+    )
+
+    # Modules
+    for mod_no, mod in sorted(modules.items(), key=lambda z: int(z[0])):
+        if add_module_overviews:
+            build_module_overview(
+                prs,
+                mod_no,
+                mod["title"],
+                mod["subs"],
+                len(prs.slides) + 1,
+                left_logo,
+                right_logo,
+            )
+
+        for sub_no, sub in sorted(
+            mod["subs"].items(),
+            key=lambda z: tuple(map(int, z[0].split("."))),
+        ):
+            build_content_slide(
+                prs,
+                mod_no,
+                mod["title"],
+                sub,
+                len(prs.slides) + 1,
+                left_logo,
+                right_logo,
+                asset_files,
+            )
+
+        if add_summaries:
+            build_summary_slide(
+                prs,
+                mod_no,
+                mod["title"],
+                mod["subs"],
+                len(prs.slides) + 1,
+                left_logo,
+                right_logo,
+            )
+
+    output = io.BytesIO()
+    prs.save(output)
+    output.seek(0)
+    return output, len(prs.slides)
+
+
+# ============================================================
+# Streamlit UI
+# ============================================================
+
+st.title("🏥 AMC NTEP — Professional PPT Auto-Designer")
+st.caption(
+    "Gujarati + English Word document → professional, infographic-style PowerPoint"
+)
+
+with st.sidebar:
+    st.header("⚙️ Presentation Settings")
+
+    presentation_title = st.text_input(
+        "Presentation title",
+        value="જાહેર આરોગ્ય કામગીરી (Public Health Actions)",
+    )
+
+    add_overviews = st.checkbox(
+        "Add module overview slides",
+        value=True,
+    )
+
+    add_summaries = st.checkbox(
+        "Add module summary slides",
+        value=True,
+    )
+
+    st.divider()
+
+    st.markdown("### Branding")
+    left_logo_file = st.file_uploader(
+        "AMC / Government logo",
+        type=["png", "jpg", "jpeg"],
+        key="left_logo",
+    )
+
+    right_logo_file = st.file_uploader(
+        "NTEP / TB logo",
+        type=["png", "jpg", "jpeg"],
+        key="right_logo",
+    )
+
+    st.divider()
+
+    st.markdown("### 📷 Visual Asset Library")
+    asset_uploads = st.file_uploader(
+        "Upload photos / maps / equipment images",
+        type=["png", "jpg", "jpeg"],
+        accept_multiple_files=True,
+        key="assets",
+        help="Use filenames such as CBNAAT.png, Truenat.png, microscope.jpg, migration_map.png",
+    )
+
+uploaded_docx = st.file_uploader(
+    "📄 Upload your Gujarati + English Word document (.docx)",
+    type=["docx"],
+)
 
 if uploaded_docx:
-    data = parse_word(uploaded_docx)
-    
-    if st.button("Generate Presentation", type="primary"):
-        with st.spinner("Designing Slides & Index..."):
-            prs = Presentation()
-            prs.slide_width, prs.slide_height = SLIDE_W, SLIDE_H
-            logos = (left_logo_file, right_logo_file)
-            
-            photo_dict = {}
-            if cbnaat_photo: photo_dict["cbnaat"] = cbnaat_photo
+    try:
+        modules = parse_word(uploaded_docx)
 
-            # 1. Title Slide
-            create_title_slide(prs, logos)
-
-            # 2. Reserve space for Index Slide (We will add it at the end and move it)
-            index_slide_index = len(prs.slides)
-            
-            # 3. Generate Modules
-            toc_data = []
-            for mod_num, mod in sorted(data["modules"].items(), key=lambda x: int(x[0])):
-                for sub_num, sub in sorted(mod["subs"].items(), key=lambda x: tuple(map(int, x[0].split(".")))):
-                    start_slide_num = build_submodule_slides(prs, mod_num, mod["title"], sub_num, sub, logos, photo_dict)
-                    toc_data.append((sub["title"], start_slide_num))
-
-            # Generate Index content dynamically
-            create_index_slide(prs, toc_data)
-            
-            # Move the last slide (Index) to position 1 (Right after Title)
-            xml_slides = prs.slides._sldIdLst
-            slides = list(xml_slides)
-            xml_slides.remove(slides[-1])
-            xml_slides.insert(1, slides[-1])
-
-            ppt_io = io.BytesIO()
-            prs.save(ppt_io)
-            ppt_io.seek(0)
-
-        st.success("✅ Presentation successfully generated with Title, Index, and Images!")
-        st.download_button(
-            "📄 Download Professional Presentation",
-            data=ppt_io,
-            file_name="AMC_NTEP_Professional.pptx",
-            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        total_subs = sum(
+            len(m["subs"]) for m in modules.values()
         )
+
+        st.success(
+            f"Detected {len(modules)} modules and {total_subs} sub-modules."
+        )
+
+        with st.expander("🔎 Preview parsed structure"):
+            for mod_no, mod in sorted(
+                modules.items(),
+                key=lambda z: int(z[0]),
+            ):
+                st.markdown(
+                    f"### Module {mod_no}: {mod['title']}"
+                )
+
+                for sub_no, sub in sorted(
+                    mod["subs"].items(),
+                    key=lambda z: tuple(map(int, z[0].split("."))),
+                ):
+                    st.markdown(
+                        f"**{sub_no} — {sub['title']}**"
+                    )
+
+                    for field in [
+                        "OBJ", "STEPS", "WHO", "TIME",
+                        "IND", "WHY", "RISK", "DOC", "TRIGGER"
+                    ]:
+                        if sub.get(field):
+                            st.write(
+                                f"{field}:",
+                                sub[field][:4]
+                            )
+
+        if asset_uploads:
+            st.info(
+                f"{len(asset_uploads)} visual assets uploaded."
+            )
+
+        if total_subs == 0:
+            st.error(
+                "No sub-modules detected. Use headings such as 1.1, 1.2, 2.1 etc. in the Word file."
+            )
+        else:
+            if st.button(
+                "🚀 Generate Professional PPT",
+                type="primary",
+                use_container_width=True,
+            ):
+                with st.spinner(
+                    "Designing cover, index, module slides, workflows, cards and visual layouts..."
+                ):
+                    output, slide_count = generate_presentation(
+                        modules=modules,
+                        left_logo=left_logo_file,
+                        right_logo=right_logo_file,
+                        title=presentation_title,
+                        asset_files=save_uploaded_assets(
+                            asset_uploads or [],
+                            asset_dir="assets"
+                        ),
+                        add_module_overviews=add_overviews,
+                        add_summaries=add_summaries,
+                    )
+
+                st.success(
+                    f"✅ Presentation generated successfully — {slide_count} slides."
+                )
+
+                st.download_button(
+                    "📥 Download AMC NTEP Professional PPT",
+                    data=output,
+                    file_name="AMC_NTEP_Professional_Public_Health_Actions.pptx",
+                    mime=(
+                        "application/vnd.openxmlformats-officedocument."
+                        "presentationml.presentation"
+                    ),
+                    use_container_width=True,
+                )
+
+    except Exception as e:
+        st.error(f"Error while reading/generating the presentation: {e}")
+
+else:
+    st.info(
+        "Upload your Word document to begin. "
+        "For best visual results, also upload AMC/NTEP logos and relevant photos."
+    )
