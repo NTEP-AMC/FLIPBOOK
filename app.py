@@ -9,7 +9,6 @@ import io
 import os
 import re
 from PIL import ImageFont
-
 st.set_page_config(page_title="AMC NTEP - Slide Auto-Designer", layout="wide")
 st.title("AMC NTEP — Public Health Actions Deck Builder")
 st.caption(
@@ -19,7 +18,6 @@ st.caption(
     "sub-module slides with equipment photos — measuring your real text so nothing "
     "overflows the cards."
 )
-
 # ----------------------------------------------------------------------
 # THEME
 # ----------------------------------------------------------------------
@@ -38,20 +36,16 @@ HIGHLIGHT_BG = RGBColor(0xC9, 0xF3, 0xEE)
 HIGHLIGHT_TEXT = RGBColor(0x0B, 0x6E, 0x5D)
 WARN_BG = RGBColor(0xFB, 0xE4, 0xE1)
 WARN_TEXT = RGBColor(0x8A, 0x2A, 0x1E)
-
 FONT = "Noto Sans Gujarati"
-
 # Font files must sit next to this script (or set full paths).
 FONT_TTF_REGULAR = os.path.join(os.path.dirname(__file__), "NotoSansGujarati-Regular.ttf")
 FONT_TTF_BOLD = os.path.join(os.path.dirname(__file__), "NotoSansGujarati-Bold.ttf")
 MEASURE_DPI = 96
-
 # PIL has no Indic shaping engine, so it under-measures Gujarati conjuncts/matras.
 # This factor widens every measured line so wrapping matches real PowerPoint
 # rendering instead of overflowing the card. Tune upward if you still see overlap
 # with your real document; 1.14 was enough margin against the real NTEP text.
 GUJ_WIDTH_CORRECTION = 1.14
-
 SLIDE_W = Inches(13.333)
 SLIDE_H = Inches(7.5)
 MARGIN_X = Inches(0.55)
@@ -61,7 +55,10 @@ BODY_BOTTOM_MARGIN = Inches(0.4)
 COL_GAP = Inches(0.28)
 CARD_GAP_V = Inches(0.2)
 CARD_PAD = Inches(0.16)
-
+# Fixed height (in inches) reserved for the small in-slide equipment-photo card
+# when a sub-module has a matched photo. It flows through the same column
+# layout as the text cards, so it never overlaps anything.
+IMAGE_CARD_H_IN = 2.15
 # ----------------------------------------------------------------------
 # FIELD DEFINITIONS
 # ----------------------------------------------------------------------
@@ -87,11 +84,9 @@ FIELD_META = {
 PROCESS_ORDER = ["OBJECTIVE", "TRIGGER", "WHAT_TO_DO", "WHY", "WHOM", "RESPONSIBLE", "TIMELINE"]
 QUALITY_ORDER = ["DOCUMENTATION", "MONITORING", "CHECKLIST", "IF_NOT_DONE"]
 FIELD_ORDER = PROCESS_ORDER + QUALITY_ORDER
-
 def field_label(key):
     m = FIELD_META[key]
     return f"{m['gj']} ({m['en']})"
-
 # ----------------------------------------------------------------------
 # 1. WORD PARSER
 # ----------------------------------------------------------------------
@@ -100,23 +95,16 @@ def field_label(key):
 # Gujarati spelling drift because we anchor on the English term.
 def _field_pattern(en_word):
     return re.compile(r"^.*?\(\s*" + re.escape(en_word) + r"\s*\??\s*\)\s*[:：]?", re.IGNORECASE)
-
 FIELD_PATTERNS = [(key, _field_pattern(meta["en"])) for key, meta in FIELD_META.items()]
-
 MODULE_RE = re.compile(r"^(Module|મોડ્યુલ)\s*(\d+)\s*[:：]?\s*(.*)$", re.IGNORECASE)
 SUBMODULE_RE = re.compile(r"^(\d+)\.(\d+)\s+(.*)$")
-
 PREFACE_HEADINGS = [
     ("PREFACE", re.compile(r"^પ્રસ્તાવના\s*$")),
     ("PURPOSE", re.compile(r"^હેતુ\s*$")),
     ("OBJECTIVES", re.compile(r"^માર્ગદર્શિકાના\s*મુખ્ય\s*ઉદ્દેશ્યો\s*$")),
 ]
-
-
 def strip_label(text, pattern):
     return pattern.sub("", text).strip()
-
-
 def parse_word(docx_file):
     """Returns (preface_dict, modules_dict).
     preface_dict: {"PREFACE": [...], "PURPOSE": [...], "OBJECTIVES": [...]}
@@ -128,12 +116,10 @@ def parse_word(docx_file):
     cur_mod, cur_sub, cur_field = None, None, None
     cur_preface_section = None
     in_body = False  # becomes True once we hit Module 1
-
     for para in doc.paragraphs:
         text = para.text.strip()
         if not text:
             continue
-
         # Preface section headings (only before first Module)
         if not in_body:
             matched_heading = False
@@ -144,7 +130,6 @@ def parse_word(docx_file):
                     break
             if matched_heading:
                 continue
-
         m = MODULE_RE.match(text)
         if m:
             in_body = True
@@ -153,7 +138,6 @@ def parse_word(docx_file):
             modules.setdefault(cur_mod, {"title": m.group(3).strip(), "subs": {}})
             cur_sub, cur_field = None, None
             continue
-
         s = SUBMODULE_RE.match(text)
         if s:
             in_body = True
@@ -166,15 +150,12 @@ def parse_word(docx_file):
                 modules[cur_mod]["subs"][cur_sub][key] = []
             cur_field = None
             continue
-
         if not in_body:
             if cur_preface_section:
                 preface[cur_preface_section].append(text)
             continue
-
         if not cur_sub:
             continue
-
         matched = False
         for key, pat in FIELD_PATTERNS:
             if pat.match(text):
@@ -190,19 +171,13 @@ def parse_word(docx_file):
                 break
         if matched:
             continue
-
         if cur_field:
             modules[cur_mod]["subs"][cur_sub][cur_field].append(text)
-
     return preface, modules
-
-
 # ----------------------------------------------------------------------
 # 2. TEXT MEASUREMENT  (drives dynamic sizing + pagination)
 # ----------------------------------------------------------------------
 _FONT_CACHE = {}
-
-
 def _pil_font(size_pt, bold=False):
     key = (round(size_pt, 1), bold)
     if key not in _FONT_CACHE:
@@ -212,16 +187,12 @@ def _pil_font(size_pt, bold=False):
         except OSError:
             _FONT_CACHE[key] = ImageFont.load_default()
     return _FONT_CACHE[key]
-
-
 def _text_width_px(text, font):
     try:
         length = font.getlength(text)
     except AttributeError:
         length = font.getsize(text)[0]
     return length * GUJ_WIDTH_CORRECTION
-
-
 def wrap_text(text, size_pt, max_width_in, bold=False):
     font = _pil_font(size_pt, bold=bold)
     max_width_px = max_width_in * MEASURE_DPI
@@ -237,14 +208,10 @@ def wrap_text(text, size_pt, max_width_in, bold=False):
     if cur:
         lines.append(cur)
     return lines or [""]
-
-
 def item_height_in(item, size_pt, max_width_in, bullet, line_spacing=1.18, item_gap_in=0.05):
     prefix_w = 0.22 if bullet else 0.0
     lines = wrap_text(item, size_pt, max_width_in - prefix_w)
     return len(lines) * size_pt * line_spacing / 72 + item_gap_in
-
-
 def chunk_items(items, max_width_in, avail_h_in, bullet):
     """Pick the largest font (12..9pt) that yields the fewest chunks, then
     return that font size and the list of chunks (each chunk = list[str])."""
@@ -268,8 +235,6 @@ def chunk_items(items, max_width_in, avail_h_in, bullet):
         if len(chunks) == 1:
             break
     return best[1], best[2]
-
-
 def fit_one_line_size(text, max_width_in, start_size=23, min_size=15, bold=True):
     """Shrink font until text fits on a single line (used for slide headers so a
     long sub-module title never wraps to 2 lines and spills out of the navy band)."""
@@ -280,8 +245,6 @@ def fit_one_line_size(text, max_width_in, start_size=23, min_size=15, bold=True)
             return size
         size -= 1
     return min_size
-
-
 # ----------------------------------------------------------------------
 # 3. DRAWING PRIMITIVES
 # ----------------------------------------------------------------------
@@ -308,8 +271,6 @@ def add_rect(slide, x, y, w, h, fill, radius=None, shadow=False):
         eff.append(sh)
         el.append(eff)
     return shp
-
-
 def add_oval(slide, x, y, d, fill):
     shp = slide.shapes.add_shape(MSO_SHAPE.OVAL, x, y, d, d)
     shp.fill.solid()
@@ -317,8 +278,6 @@ def add_oval(slide, x, y, d, fill):
     shp.line.fill.background()
     shp.shadow.inherit = False
     return shp
-
-
 def add_text(slide, x, y, w, h, text, size, color, bold=False, align=PP_ALIGN.LEFT,
              anchor=MSO_ANCHOR.TOP, wrap=True):
     tb = slide.shapes.add_textbox(x, y, w, h)
@@ -338,8 +297,6 @@ def add_text(slide, x, y, w, h, text, size, color, bold=False, align=PP_ALIGN.LE
         r.font.name = FONT
         r.font.color.rgb = color
     return tb
-
-
 def add_items(slide, x, y, w, h, items, size, color, bullet):
     tb = slide.shapes.add_textbox(x, y, w, h)
     tf = tb.text_frame
@@ -355,8 +312,6 @@ def add_items(slide, x, y, w, h, items, size, color, bullet):
         r.font.name = FONT
         r.font.color.rgb = color
     return tb
-
-
 # ---- icon glyphs (flat vector shapes, no badge circle) ----
 def icon_target(slide, x, y, d, color):
     add_oval(slide, x, y, d, color)
@@ -364,13 +319,9 @@ def icon_target(slide, x, y, d, color):
     add_oval(slide, x + int((d - m) / 2), y + int((d - m) / 2), m, WHITE)
     s = int(d * 0.30)
     add_oval(slide, x + int((d - s) / 2), y + int((d - s) / 2), s, color)
-
-
 def icon_gear(slide, x, y, d, color):
     shp = slide.shapes.add_shape(MSO_SHAPE.GEAR_9, x, y, d, d)
     shp.fill.solid(); shp.fill.fore_color.rgb = color; shp.line.fill.background(); shp.shadow.inherit = False
-
-
 def icon_people(slide, x, y, d, color):
     head_d = int(d * 0.40)
     add_oval(slide, x + int((d - head_d) / 2), y, head_d, color)
@@ -382,8 +333,6 @@ def icon_people(slide, x, y, d, color):
     except Exception:
         pass
     body.fill.solid(); body.fill.fore_color.rgb = color; body.line.fill.background(); body.shadow.inherit = False
-
-
 def icon_clock(slide, x, y, d, color):
     add_oval(slide, x, y, d, color)
     cx, cy = x + d // 2, y + d // 2
@@ -392,8 +341,6 @@ def icon_clock(slide, x, y, d, color):
     hand2 = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, cx - int(d * 0.035), cy - int(d * 0.24), int(d * 0.07), int(d * 0.24))
     hand2.fill.solid(); hand2.fill.fore_color.rgb = WHITE; hand2.line.fill.background(); hand2.shadow.inherit = False
     hand2.rotation = 90
-
-
 def icon_chart(slide, x, y, d, color):
     bar_w = int(d * 0.20); gap = int(d * 0.12)
     heights = [int(d * 0.42), int(d * 0.68), int(d * 0.95)]
@@ -403,8 +350,6 @@ def icon_chart(slide, x, y, d, color):
         bx = start_x + i * (bar_w + gap)
         by = y + (d - h)
         add_rect(slide, bx, by, bar_w, h, color)
-
-
 def icon_bolt(slide, x, y, d, color):
     # simple lightning bolt via a freeform-ish stack of two triangles
     t1 = slide.shapes.add_shape(MSO_SHAPE.ISOSCELES_TRIANGLE, x + int(d * 0.15), y, int(d * 0.6), int(d * 0.62))
@@ -413,20 +358,14 @@ def icon_bolt(slide, x, y, d, color):
     t2 = slide.shapes.add_shape(MSO_SHAPE.ISOSCELES_TRIANGLE, x + int(d * 0.22), y + int(d * 0.4), int(d * 0.6), int(d * 0.62))
     t2.rotation = 20
     t2.fill.solid(); t2.fill.fore_color.rgb = color; t2.line.fill.background(); t2.shadow.inherit = False
-
-
 def icon_info(slide, x, y, d, color):
     add_oval(slide, x, y, d, color)
     add_rect(slide, x + int(d * 0.44), y + int(d * 0.42), int(d * 0.12), int(d * 0.36), WHITE)
     add_oval(slide, x + int(d * 0.41), y + int(d * 0.18), int(d * 0.18), WHITE)
-
-
 def icon_doc(slide, x, y, d, color):
     add_rect(slide, x + int(d * 0.15), y, int(d * 0.7), d, color, radius=0.12)
     for i in range(3):
         add_rect(slide, x + int(d * 0.28), y + int(d * (0.28 + i * 0.2)), int(d * 0.44), int(d * 0.06), WHITE)
-
-
 def icon_check(slide, x, y, d, color):
     add_oval(slide, x, y, d, color)
     from pptx.oxml.ns import qn
@@ -437,22 +376,16 @@ def icon_check(slide, x, y, d, color):
     r2 = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x + int(d * 0.40), y + int(d * 0.30), int(d * 0.42), int(d * 0.09))
     r2.rotation = -45
     r2.fill.solid(); r2.fill.fore_color.rgb = WHITE; r2.line.fill.background(); r2.shadow.inherit = False
-
-
 def icon_warn(slide, x, y, d, color):
     tri = slide.shapes.add_shape(MSO_SHAPE.ISOSCELES_TRIANGLE, x, y, d, d)
     tri.fill.solid(); tri.fill.fore_color.rgb = color; tri.line.fill.background(); tri.shadow.inherit = False
     add_rect(slide, x + int(d * 0.46), y + int(d * 0.38), int(d * 0.08), int(d * 0.28), WHITE)
     add_oval(slide, x + int(d * 0.45), y + int(d * 0.74), int(d * 0.10), WHITE)
-
-
 ICON_FN = {
     "target": icon_target, "gear": icon_gear, "people": icon_people, "clock": icon_clock,
     "chart": icon_chart, "bolt": icon_bolt, "info": icon_info, "doc": icon_doc,
     "check": icon_check, "warn": icon_warn,
 }
-
-
 # ----------------------------------------------------------------------
 # 4. CARD BUILDER
 # ----------------------------------------------------------------------
@@ -468,7 +401,6 @@ def draw_card(slide, x, y, w, h, field_key, size_pt, items, label_override=None)
         bg = CARD_WHITE
         text_color = TEXT_GRAY
     add_rect(slide, x, y, w, h, bg, radius=0.06, shadow=True)
-
     icon_d = Inches(0.34)
     pad = CARD_PAD
     ICON_FN[meta["icon"]](slide, x + pad, y + pad, icon_d, meta["color"])
@@ -476,28 +408,54 @@ def draw_card(slide, x, y, w, h, field_key, size_pt, items, label_override=None)
     label_w = w - pad - icon_d - Inches(0.12) - pad
     add_text(slide, label_x, y + pad - Inches(0.02), label_w, icon_d,
              label_override or field_label(field_key), 12, NAVY, bold=True, anchor=MSO_ANCHOR.MIDDLE)
-
     body_y = y + pad + icon_d + Inches(0.10)
     body_w = w - 2 * pad
     body_h = h - (body_y - y) - pad
     add_items(slide, x + pad, body_y, body_w, body_h, items, size_pt, text_color, meta["bullet"])
-
-
+def draw_image_card(slide, x, y, w, h, keyword_file):
+    """Small in-slide 'Equipment' photo card. Sits inside the normal card grid
+    (same column-flow as the text cards) so it can never overlap other content."""
+    keyword, file = keyword_file
+    add_rect(slide, x, y, w, h, CARD_WHITE, radius=0.06, shadow=True)
+    pad = CARD_PAD
+    label_h = Inches(0.28)
+    add_text(slide, x + pad, y + pad - Inches(0.02), w - 2 * pad, label_h,
+             "સાધનસામગ્રી (Equipment)", 11.5, NAVY, bold=True, anchor=MSO_ANCHOR.MIDDLE)
+    img_area_x = x + pad
+    img_area_y = y + pad + label_h + Inches(0.06)
+    img_area_w = w - 2 * pad
+    img_area_h = h - (img_area_y - y) - pad
+    try:
+        file.seek(0)
+        pic = slide.shapes.add_picture(file, img_area_x, img_area_y, height=img_area_h)
+        if pic.width > img_area_w:
+            file.seek(0)
+            slide.shapes._spTree.remove(pic._element)
+            pic = slide.shapes.add_picture(file, img_area_x, img_area_y, width=img_area_w)
+        pic.left = int(img_area_x + (img_area_w - pic.width) / 2)
+        pic.top = int(img_area_y + (img_area_h - pic.height) / 2)
+    except Exception:
+        add_text(slide, img_area_x, img_area_y, img_area_w, img_area_h, f"[{keyword}]", 12, TEXT_GRAY,
+                  align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
 def field_card_height_in(field_key, items, size_pt, content_w_in):
+    if field_key == "IMAGE":
+        return IMAGE_CARD_H_IN
     meta = FIELD_META[field_key]
     total = sum(item_height_in(it, size_pt, content_w_in, meta["bullet"]) for it in items)
     header_h_in = 0.34 + 0.10
     return header_h_in + total + (CARD_PAD / 914400) * 2
-
-
 # ----------------------------------------------------------------------
 # 5. LAYOUT PLANNER  (shared by dry-run TOC pass and real drawing pass)
 # ----------------------------------------------------------------------
-def plan_field_group_slides(items_by_field, field_keys, content_w_in, body_h_in):
+def plan_field_group_slides(items_by_field, field_keys, content_w_in, body_h_in, image_piece=None):
     """Given a subset of fields (e.g. the 'process' group or 'quality' group),
     return a list of slide layouts. Each layout is a list of
-    (col, field_key, font_size, chunk_items, is_continuation, h_in)."""
+    (col, field_key, font_size, chunk_items, is_continuation, h_in).
+    image_piece, if given, is (keyword, file) for a small equipment-photo card
+    that gets folded into the same column-flow as the text cards."""
     pieces = []
+    if image_piece is not None:
+        pieces.append(("IMAGE", None, image_piece, False))
     for key in field_keys:
         items = [x for x in items_by_field.get(key, []) if x.strip()]
         if not items:
@@ -506,10 +464,8 @@ def plan_field_group_slides(items_by_field, field_keys, content_w_in, body_h_in)
         font_size, chunks = chunk_items(items, content_w_in, avail, FIELD_META[key]["bullet"])
         for idx, chunk in enumerate(chunks):
             pieces.append((key, font_size, chunk, idx > 0))
-
     if not pieces:
         return []
-
     slides_layout = []
     col_used = [0.0, 0.0]
     cur_slide_items = []
@@ -526,16 +482,15 @@ def plan_field_group_slides(items_by_field, field_keys, content_w_in, body_h_in)
     if cur_slide_items:
         slides_layout.append(cur_slide_items)
     return slides_layout
-
-
-def plan_submodule(sub):
-    """Returns list of (group_label, layout) pairs -> total slide count is len(list)."""
+def plan_submodule(sub, image_match=None):
+    """Returns list of (group_label, layout) pairs -> total slide count is len(list).
+    image_match, if given, is (keyword, file) for the sub-module's equipment photo —
+    it gets embedded as a small card among the process-group slides."""
     col_w_emu = (SLIDE_W - 2 * MARGIN_X - COL_GAP) // 2
     content_w_in = col_w_emu / 914400 - (CARD_PAD / 914400) * 2
     body_h_in = (SLIDE_H - BODY_TOP - BODY_BOTTOM_MARGIN) / 914400
-
     result = []
-    process_layout = plan_field_group_slides(sub, PROCESS_ORDER, content_w_in, body_h_in)
+    process_layout = plan_field_group_slides(sub, PROCESS_ORDER, content_w_in, body_h_in, image_piece=image_match)
     quality_layout = plan_field_group_slides(sub, QUALITY_ORDER, content_w_in, body_h_in)
     for layout in process_layout:
         result.append(("process", layout))
@@ -544,15 +499,12 @@ def plan_submodule(sub):
     if not result:
         result = [("process", [(0, "OBJECTIVE", 12, ["\u2014"], False, 1.0)])]
     return result
-
-
 # ----------------------------------------------------------------------
 # 6. SLIDE DRAWING
 # ----------------------------------------------------------------------
 def draw_header(slide, module_num, module_title, sub_title, group_label, part_no, part_total, logos):
     add_rect(slide, 0, 0, SLIDE_W, SLIDE_H, BG_LIGHT)
     add_rect(slide, 0, 0, SLIDE_W, HEADER_H, NAVY)
-
     left_logo, right_logo = logos
     text_left = Inches(0.55)
     text_right_pad = Inches(0.55)
@@ -567,43 +519,38 @@ def draw_header(slide, module_num, module_title, sub_title, group_label, part_no
         add_oval(slide, rx, (HEADER_H - d) // 2, d, WHITE)
         slide.shapes.add_picture(right_logo, rx + Inches(0.07), (HEADER_H - d) // 2 + Inches(0.07), height=d - Inches(0.14))
         text_right_pad = Inches(1.35)
-
     header_text_w = SLIDE_W - text_left - text_right_pad
     kicker = f"Module {module_num} \u2022 {module_title}".strip(" \u2022")
     if group_label == "quality":
         kicker += "  \u2022  ગુણવત્તા અને દેખરેખ"
     add_text(slide, text_left, Inches(0.14), header_text_w, Inches(0.3), kicker, 13, RGBColor(0xB9, 0xD3, 0xF2))
-
     title = sub_title
     if part_total > 1:
         title += f"   ({part_no}/{part_total})"
     title_size = fit_one_line_size(title, header_text_w / 914400, start_size=23, min_size=15)
     add_text(slide, text_left, Inches(0.48), header_text_w, Inches(0.68), title, title_size, WHITE,
              bold=True, anchor=MSO_ANCHOR.MIDDLE)
-
-
 def draw_field_slide(prs, module_num, module_title, sub_title, group_label, part_no, part_total,
                       layout, logos):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     draw_header(slide, module_num, module_title, sub_title, group_label, part_no, part_total, logos)
-
     col_w_emu = (SLIDE_W - 2 * MARGIN_X - COL_GAP) // 2
     full_w = SLIDE_W - 2 * MARGIN_X
     single_col = not any(item[0] == 1 for item in layout)
     col_y = [BODY_TOP, BODY_TOP]
     col_x = [MARGIN_X, MARGIN_X + col_w_emu + COL_GAP]
-
     for target_col, key, font_size, chunk, is_cont, h_in in layout:
         w = full_w if single_col else col_w_emu
         x = col_x[0] if single_col else col_x[target_col]
         y = col_y[target_col]
         h = Emu(int(h_in * 914400))
-        label_override = field_label(key) + ("  (\u091a\u093e\u0932\u0941)" if is_cont else "")
-        draw_card(slide, x, y, w, h, key, font_size, chunk, label_override=label_override)
+        if key == "IMAGE":
+            draw_image_card(slide, x, y, w, h, chunk)
+        else:
+            label_override = field_label(key) + ("  (\u091a\u093e\u0932\u0941)" if is_cont else "")
+            draw_card(slide, x, y, w, h, key, font_size, chunk, label_override=label_override)
         col_y[target_col] = y + h + CARD_GAP_V
     return slide
-
-
 def draw_equipment_slide(prs, module_num, module_title, sub_title, keyword, image_file, logos):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     add_rect(slide, 0, 0, SLIDE_W, SLIDE_H, BG_LIGHT)
@@ -621,13 +568,13 @@ def draw_equipment_slide(prs, module_num, module_title, sub_title, keyword, imag
     eq_size = fit_one_line_size(eq_title, header_text_w / 914400, start_size=21, min_size=14)
     add_text(slide, text_left, Inches(0.48), header_text_w, Inches(0.68),
              eq_title, eq_size, WHITE, bold=True, anchor=MSO_ANCHOR.MIDDLE)
-
     # centered photo card
     card_w, card_h = Inches(6.4), Inches(5.4)
     card_x = (SLIDE_W - card_w) // 2
     card_y = BODY_TOP + Inches(0.1)
     add_rect(slide, card_x, card_y, card_w, card_h, CARD_WHITE, radius=0.04, shadow=True)
     try:
+        image_file.seek(0)
         pic = slide.shapes.add_picture(image_file, card_x, card_y, width=card_w)
         if pic.height > card_h - Inches(0.3):
             image_file.seek(0)
@@ -639,8 +586,6 @@ def draw_equipment_slide(prs, module_num, module_title, sub_title, keyword, imag
         add_text(slide, card_x, card_y, card_w, card_h, f"[{keyword}]", 16, TEXT_GRAY,
                   align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
     return slide
-
-
 def draw_title_slide(prs, doc_title, logos):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     add_rect(slide, 0, 0, SLIDE_W, SLIDE_H, NAVY)
@@ -660,8 +605,6 @@ def draw_title_slide(prs, doc_title, logos):
     add_text(slide, Inches(1), Inches(4.7), SLIDE_W - Inches(2), Inches(0.4),
              "Public Health Actions \u2014 Standard Operating Procedures", 16, RGBColor(0xB9, 0xD3, 0xF2), align=PP_ALIGN.CENTER)
     return slide
-
-
 def draw_preface_slide(prs, heading_gj, heading_en, paragraphs, icon, logos):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     add_rect(slide, 0, 0, SLIDE_W, SLIDE_H, BG_LIGHT)
@@ -674,7 +617,6 @@ def draw_preface_slide(prs, heading_gj, heading_en, paragraphs, icon, logos):
         text_left = Inches(1.35)
     add_text(slide, text_left, Inches(0.14), Inches(10), Inches(0.3), heading_en, 13, RGBColor(0xB9, 0xD3, 0xF2))
     add_text(slide, text_left, Inches(0.48), Inches(10), Inches(0.68), heading_gj, 26, WHITE, bold=True, anchor=MSO_ANCHOR.MIDDLE)
-
     card_x, card_y = MARGIN_X, BODY_TOP
     card_w = SLIDE_W - 2 * MARGIN_X
     card_h = SLIDE_H - BODY_TOP - BODY_BOTTOM_MARGIN
@@ -690,8 +632,6 @@ def draw_preface_slide(prs, heading_gj, heading_en, paragraphs, icon, logos):
     flat = [p for c in chunks for p in c]
     add_items(slide, body_x, body_y, body_w, body_h, flat, size, TEXT_GRAY, bullet=False)
     return slide
-
-
 def draw_module_overview_slide(prs, modules, module_start_slide, logos):
     """'Modules at a Glance' — grid of module cards, each showing its title
     and the number of sub-modules it contains, real page number linked via TOC."""
@@ -706,7 +646,6 @@ def draw_module_overview_slide(prs, modules, module_start_slide, logos):
         text_left = Inches(1.35)
     add_text(slide, text_left, Inches(0.14), Inches(10), Inches(0.3), "Overview", 13, RGBColor(0xB9, 0xD3, 0xF2))
     add_text(slide, text_left, Inches(0.48), Inches(10), Inches(0.68), "મોડ્યુલ ઝલક  (Modules at a Glance)", 24, WHITE, bold=True, anchor=MSO_ANCHOR.MIDDLE)
-
     mod_nums = sorted(modules.keys(), key=lambda x: int(x))
     n = len(mod_nums)
     cols = 2 if n <= 4 else (3 if n <= 6 else 4)
@@ -716,7 +655,6 @@ def draw_module_overview_slide(prs, modules, module_start_slide, logos):
     grid_h = SLIDE_H - BODY_TOP - BODY_BOTTOM_MARGIN
     card_w = (grid_w - gap * (cols - 1)) // cols
     card_h = (grid_h - gap * (rows - 1)) // rows
-
     for i, mod_num in enumerate(mod_nums):
         r, c = divmod(i, cols)
         x = MARGIN_X + c * (card_w + gap)
@@ -735,8 +673,6 @@ def draw_module_overview_slide(prs, modules, module_start_slide, logos):
         add_text(slide, x + Inches(0.2), y + card_h - Inches(0.5), card_w - Inches(0.4), Inches(0.32),
                   f"{n_subs} sub-modules  \u2022  Slide {page}", 11.5, TEXT_GRAY)
     return slide
-
-
 def draw_module_divider_slide(prs, module_num, module_title, sub_titles, logos):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     add_rect(slide, 0, 0, SLIDE_W, SLIDE_H, NAVY)
@@ -750,8 +686,6 @@ def draw_module_divider_slide(prs, module_num, module_title, sub_titles, logos):
         if y > SLIDE_H - Inches(0.6):
             break
     return slide
-
-
 def draw_toc_slide(prs, entries, page_no_start, logos, part_no, part_total):
     """entries: list of (level, label, page_str). level 0 = module, 1 = sub-module."""
     slide = prs.slides.add_slide(prs.slide_layouts[6])
@@ -766,7 +700,6 @@ def draw_toc_slide(prs, entries, page_no_start, logos, part_no, part_total):
     title = "અનુક્રમણિકા (Index)" + (f"  ({part_no}/{part_total})" if part_total > 1 else "")
     add_text(slide, text_left, Inches(0.14), Inches(10), Inches(0.3), "Table of Contents", 13, RGBColor(0xB9, 0xD3, 0xF2))
     add_text(slide, text_left, Inches(0.48), Inches(10), Inches(0.68), title, 24, WHITE, bold=True, anchor=MSO_ANCHOR.MIDDLE)
-
     col_w = (SLIDE_W - 2 * MARGIN_X - COL_GAP) // 2
     col_x = [MARGIN_X, MARGIN_X + col_w + COL_GAP]
     n = len(entries)
@@ -791,8 +724,6 @@ def draw_toc_slide(prs, entries, page_no_start, logos, part_no, part_total):
                           align=PP_ALIGN.RIGHT, anchor=MSO_ANCHOR.MIDDLE)
             y += row_h + Inches(0.04)
     return slide
-
-
 def toc_row_height_in(level, label, col_w_in):
     """Wrap-aware row height so a long module/sub-module title that wraps to 2
     lines gets a taller row instead of spilling out of its box."""
@@ -804,8 +735,6 @@ def toc_row_height_in(level, label, col_w_in):
     per_extra_line = size * 1.18 / 72
     h = base + max(0, len(lines) - 1) * per_extra_line
     return h + 0.04
-
-
 def paginate_toc(entries, avail_h_in, col_w_in):
     half_budget = avail_h_in  # each column has this much room; 2 cols per slide
     pages = []
@@ -827,28 +756,40 @@ def paginate_toc(entries, avail_h_in, col_w_in):
     if cur:
         pages.append(cur)
     return pages
-
-
 # ----------------------------------------------------------------------
 # 7. EQUIPMENT PHOTO MATCHING
 # ----------------------------------------------------------------------
 def normalize_keyword(name):
     base = os.path.splitext(name)[0]
     return re.sub(r"[\s_\-]+", "", base).lower()
-
-
 def find_equipment_matches(sub, image_map):
-    """Scan a sub-module's field text for any uploaded-photo keyword. Returns
-    list of (keyword, file) — usually 0 or 1 matches per sub-module."""
-    haystack = " ".join(" ".join(sub.get(k, [])) for k in FIELD_META).lower()
-    haystack = re.sub(r"[\s_\-]+", "", haystack)
+    """Scan a sub-module's field text for any uploaded-photo keyword.
+
+    IMPORTANT: this matches on whole WORD boundaries, not raw substrings.
+    Filenames are normalized by stripping spaces/underscores/hyphens (e.g.
+    "Chest X-Ray.jpg" and "chest_x_ray.png" both become "chestxray"). To find
+    that keyword in the sub-module's text we tokenize the text into real words
+    and join up to 4 *consecutive* words back together (e.g. "chest", "x",
+    "ray" -> "chestxray") and only count it as a match if that joined phrase
+    is EXACTLY equal to the keyword. This is what prevents a short/generic
+    keyword from accidentally matching inside unrelated words elsewhere in the
+    document (the old version concatenated the entire text into one long
+    string with no spaces and did a plain substring search, which is why a
+    photo could show up on unrelated slides while another photo never
+    matched at all).
+    """
+    raw = " ".join(" ".join(sub.get(k, [])) for k in FIELD_META)
+    tokens = [t.lower() for t in re.findall(r"[^\s_\-]+", raw, re.UNICODE)]
+    joined = set()
+    max_n = 4
+    for n in range(1, max_n + 1):
+        for i in range(len(tokens) - n + 1):
+            joined.add("".join(tokens[i:i + n]))
     matches = []
     for kw, file in image_map.items():
-        if kw and kw in haystack:
+        if kw and len(kw) >= 3 and kw in joined:
             matches.append((kw, file))
     return matches
-
-
 # ----------------------------------------------------------------------
 # 8. TWO-PASS BUILD: plan everything first (for real TOC page numbers),
 #    then draw.
@@ -857,21 +798,15 @@ def build_plan(modules, image_map):
     """Returns a flat ordered list of 'slide jobs' plus metadata needed for TOC/overview.
     Each job is a dict describing what draw_* call to make later."""
     jobs = []  # list of dicts
-
     jobs.append({"kind": "title"})
-
     # Preface jobs are appended by caller before this (fixed count), so start
     # counting sub-module content pages after title + preface + TOC(placeholder) + overview.
     return jobs  # (kept for clarity; actual orchestration happens in run_build)
-
-
 def run_build(preface, modules, logos, image_map, progress_cb=None):
     prs = Presentation()
     prs.slide_width = SLIDE_W
     prs.slide_height = SLIDE_H
-
     mod_nums = sorted(modules.keys(), key=lambda x: int(x))
-
     # ---- Pass 1: figure out how many slides everything takes, in order ----
     # Fixed-position pieces
     fixed_pre = []
@@ -882,7 +817,6 @@ def run_build(preface, modules, logos, image_map, progress_cb=None):
         fixed_pre.append(("preface_purpose", None))
     if preface.get("OBJECTIVES"):
         fixed_pre.append(("preface_objectives", None))
-
     # TOC entries (module + sub-module rows) — page numbers filled after we know
     # how many slides precede each item. We don't know TOC's own slide count yet
     # (it depends on entry count), so: build entries first with placeholder pages,
@@ -896,20 +830,26 @@ def run_build(preface, modules, logos, image_map, progress_cb=None):
         for sub_num in sorted(modules[mod_num]["subs"].keys(), key=lambda x: tuple(map(int, x.split(".")))):
             title = modules[mod_num]["subs"][sub_num]["title"]
             entries.append((1, f"{sub_num}  {title}", None, ("sub", mod_num, sub_num)))
-
     body_h_in_toc = (SLIDE_H - BODY_TOP - BODY_BOTTOM_MARGIN) / 914400
     toc_col_w_in = ((SLIDE_W - 2 * MARGIN_X - COL_GAP) // 2) / 914400
     toc_pages = paginate_toc(entries, body_h_in_toc, toc_col_w_in)
     n_toc_slides = max(1, len(toc_pages))
-
     overview_slides = 1
-
-    # module divider (1) + per-submodule plan
+    # module divider (1) + per-submodule plan.
+    # Compute each sub-module's equipment matches ONCE here and reuse them for
+    # both pass 1 (counting) and pass 2 (drawing) so the two passes can never
+    # disagree with each other.
+    submodule_matches = {}
     submodule_plans = {}  # (mod_num, sub_num) -> plan (list of (group,layout))
     for mod_num in mod_nums:
         for sub_num, sub in modules[mod_num]["subs"].items():
-            submodule_plans[(mod_num, sub_num)] = plan_submodule(sub)
-
+            matches = find_equipment_matches(sub, image_map)
+            submodule_matches[(mod_num, sub_num)] = matches
+            # Only the first match gets embedded as a small in-slide thumbnail;
+            # if a sub-module happens to match more than one photo, the rest
+            # still get their own full-page "Equipment Reference" slide below.
+            image_match = matches[0] if matches else None
+            submodule_plans[(mod_num, sub_num)] = plan_submodule(sub, image_match)
     # Now compute absolute slide numbers (1-indexed) for every module & sub-module.
     slide_no = 1 + len(fixed_pre) - 1 + 1  # placeholder, recomputed properly below
     # Recompute cleanly:
@@ -917,7 +857,6 @@ def run_build(preface, modules, logos, image_map, progress_cb=None):
     slide_no += (len(fixed_pre) - 1)  # preface slides (title already counted)
     slide_no += n_toc_slides
     slide_no += overview_slides
-
     module_start_slide = {}
     submodule_start_slide = {}
     for mod_num in mod_nums:
@@ -927,11 +866,8 @@ def run_build(preface, modules, logos, image_map, progress_cb=None):
             submodule_start_slide[(mod_num, sub_num)] = slide_no
             plan = submodule_plans[(mod_num, sub_num)]
             slide_no += len(plan)
-            matches = find_equipment_matches(modules[mod_num]["subs"][sub_num], image_map)
-            slide_no += len(matches)
-
+            slide_no += len(submodule_matches[(mod_num, sub_num)])
     total_slides = slide_no - 1 + 1  # closing slide follows
-
     # Fill entries' page numbers
     filled_entries = []
     for level, label, _, ref in entries:
@@ -940,10 +876,8 @@ def run_build(preface, modules, logos, image_map, progress_cb=None):
         else:
             page = submodule_start_slide[(ref[1], ref[2])]
         filled_entries.append((level, label, page))
-
     # ---- Pass 2: actually draw everything in the same order ----
     draw_title_slide(prs, "Public Health Actions of the TB Department", logos)
-
     preface_icons = {"PREFACE": "info", "PURPOSE": "target", "OBJECTIVES": "check"}
     preface_headings = {"PREFACE": ("પ્રસ્તાવના", "Preface"), "PURPOSE": ("હેતુ", "Purpose"),
                           "OBJECTIVES": ("માર્ગદર્શિકાના મુખ્ય ઉદ્દેશ્યો", "Key Objectives")}
@@ -951,16 +885,13 @@ def run_build(preface, modules, logos, image_map, progress_cb=None):
         if preface.get(key):
             gj, en = preface_headings[key]
             draw_preface_slide(prs, gj, en, preface[key], preface_icons[key], logos)
-
     # re-chunk filled_entries onto the same page boundaries computed in pass 1
     toc_pages_final = paginate_toc(
         [(lvl, lbl, pg) for lvl, lbl, pg in filled_entries], body_h_in_toc, toc_col_w_in
     )
     for i, page_entries in enumerate(toc_pages_final):
         draw_toc_slide(prs, page_entries, None, logos, i + 1, len(toc_pages_final))
-
     draw_module_overview_slide(prs, modules, module_start_slide, logos)
-
     total = len(mod_nums)
     for mi, mod_num in enumerate(mod_nums):
         sub_items = sorted(modules[mod_num]["subs"].items(), key=lambda x: tuple(map(int, x[0].split("."))))
@@ -973,12 +904,14 @@ def run_build(preface, modules, logos, image_map, progress_cb=None):
             for pi, (group_label, layout) in enumerate(plan):
                 draw_field_slide(prs, mod_num, modules[mod_num]["title"], display_title,
                                    group_label, pi + 1, total_parts, layout, logos)
-            for kw, file in find_equipment_matches(sub, image_map):
+            # Reuse the exact same match list computed in pass 1 (deterministic,
+            # but this also guarantees pass 1's slide count and pass 2's actual
+            # slides can never drift apart).
+            for kw, file in submodule_matches[(mod_num, sub_num)]:
                 draw_equipment_slide(prs, mod_num, modules[mod_num]["title"], display_title,
                                        kw, file, logos)
         if progress_cb:
             progress_cb((mi + 1) / total)
-
     # closing slide
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     add_rect(slide, 0, 0, SLIDE_W, SLIDE_H, NAVY)
@@ -986,10 +919,7 @@ def run_build(preface, modules, logos, image_map, progress_cb=None):
               bold=True, align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
     add_text(slide, Inches(1), Inches(4.1), SLIDE_W - Inches(2), Inches(0.5),
               "NTEP \u2014 Ahmedabad Municipal Corporation", 15, RGBColor(0xB9, 0xD3, 0xF2), align=PP_ALIGN.CENTER)
-
     return prs
-
-
 # ----------------------------------------------------------------------
 # 9. STREAMLIT UI
 # ----------------------------------------------------------------------
@@ -998,33 +928,45 @@ with col1:
     left_logo_file = st.file_uploader("Left logo (e.g. AMC seal) — optional", type=["png", "jpg", "jpeg"])
 with col2:
     right_logo_file = st.file_uploader("Right logo (e.g. NTEP logo) — optional", type=["png", "jpg", "jpeg"])
-
 st.markdown(
     "**Equipment / reference photos (optional).** Upload any number of photos. "
     "Name each file after the keyword that should trigger it — e.g. `genexpert.png` "
-    "or `cbnaat.jpg` will auto-insert a reference slide into any sub-module whose text "
-    "mentions that word (case-insensitive, spaces/underscores ignored)."
+    "or `chest_x_ray.jpg` will auto-insert a reference slide (plus a small photo "
+    "card right on the relevant content slide) into any sub-module whose text "
+    "mentions that exact word/phrase (case-insensitive, spaces/underscores/hyphens "
+    "ignored). Matching now requires the whole word/phrase to appear together in "
+    "the text — a short keyword can no longer accidentally match unrelated slides."
 )
 equipment_files = st.file_uploader(
     "Equipment photos", type=["png", "jpg", "jpeg"], accept_multiple_files=True
 )
-
 uploaded_docx = st.file_uploader("Upload Gujarati Word Document (.docx)", type=["docx"])
-
 if uploaded_docx:
     preface, modules = parse_word(uploaded_docx)
     for mod in modules.values():
         for sub in mod["subs"].values():
             sub.setdefault("title_display", sub["title"])
-
     total_subs = sum(len(m["subs"]) for m in modules.values())
     with st.expander(f"🔍 Parsed structure — {len(modules)} modules, {total_subs} sub-modules"):
         st.write({"preface": preface, "modules": modules})
-
-    image_map = {normalize_keyword(f.name): f for f in (equipment_files or [])}
+    # Build the keyword->file map, but warn (instead of silently losing a photo)
+    # if two uploaded filenames normalize to the same keyword.
+    image_map = {}
+    collisions = []
+    for f in (equipment_files or []):
+        key = normalize_keyword(f.name)
+        if key in image_map and image_map[key].name != f.name:
+            collisions.append((f.name, image_map[key].name, key))
+        image_map[key] = f
     if image_map:
         st.caption("Equipment keywords detected: " + ", ".join(sorted(image_map.keys())))
-
+    if collisions:
+        for new_name, old_name, key in collisions:
+            st.warning(
+                f"⚠️ '{new_name}' and '{old_name}' both normalize to the same keyword "
+                f"'{key}', so only one of them will be used. Rename one of the files "
+                f"(e.g. add a number) if they're meant to be different photos."
+            )
     if total_subs == 0:
         st.error("No sub-modules (like 1.1, 1.2) were detected. Check your Word doc headings, "
                   "or adjust MODULE_RE / SUBMODULE_RE in the script if your numbering format differs.")
@@ -1037,7 +979,6 @@ if uploaded_docx:
             prs.save(ppt_io)
             ppt_io.seek(0)
         progress.empty()
-
         st.success(f"✅ Generated {len(prs.slides._sldIdLst)} slides for {total_subs} sub-modules.")
         st.download_button(
             "📄 Download Presentation",
