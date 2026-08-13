@@ -62,7 +62,14 @@ def tint(rgb_color, amount=0.82):
     return RGBColor(r, g, b)
 
 
-FONT = "Noto Sans Gujarati"
+FONT_GUJARATI = "Shruti"
+FONT_ENGLISH = "Calibri"
+_GUJARATI_CHAR_RE = re.compile(r"[\u0A80-\u0AFF]")
+
+
+def pick_font(text):
+    """Shruti for any text containing Gujarati script, Calibri otherwise."""
+    return FONT_GUJARATI if _GUJARATI_CHAR_RE.search(text or "") else FONT_ENGLISH
 # Font files must sit next to this script (or set full paths).
 ASSET_DIR = os.path.dirname(__file__)
 FONT_TTF_REGULAR = os.path.join(ASSET_DIR, "NotoSansGujarati-Regular.ttf")
@@ -425,7 +432,7 @@ def add_text(slide, x, y, w, h, text, size, color, bold=False, align=PP_ALIGN.LE
         r.text = line
         r.font.size = Pt(size)
         r.font.bold = bold
-        r.font.name = FONT
+        r.font.name = pick_font(line)
         r.font.color.rgb = color
     return tb
 
@@ -442,7 +449,7 @@ def add_items(slide, x, y, w, h, items, size, color, bullet):
         r = p.add_run()
         r.text = (f"\u2022  {item}" if bullet else item)
         r.font.size = Pt(size)
-        r.font.name = FONT
+        r.font.name = pick_font(item)
         r.font.color.rgb = color
     return tb
 
@@ -858,7 +865,7 @@ def draw_title_slide(prs, doc_title, logos, heritage_bg=None, riverfront=None):
     bg_drawn = False
     if heritage_bg is not None:
         try:
-            bg_buf = prepare_cover_image(heritage_bg, 1600, 900, blur_radius=5)
+            bg_buf = prepare_cover_image(heritage_bg, 1600, 900, blur_radius=14)
             slide.shapes.add_picture(bg_buf, 0, 0, width=SLIDE_W, height=SLIDE_H)
             bg_drawn = True
         except Exception:
@@ -917,7 +924,7 @@ def draw_closing_slide(prs, logos, closing_bg=None):
     bg_drawn = False
     if closing_bg is not None:
         try:
-            bg_buf = prepare_cover_image(closing_bg, 1600, 900, blur_radius=3)
+            bg_buf = prepare_cover_image(closing_bg, 1600, 900, blur_radius=6)
             slide.shapes.add_picture(bg_buf, 0, 0, width=SLIDE_W, height=SLIDE_H)
             bg_drawn = True
         except Exception:
@@ -1357,12 +1364,11 @@ with colC:
 
 heritage_bg = resolve_front_image(heritage_upload, DEFAULT_HERITAGE_BG)
 riverfront = resolve_front_image(riverfront_upload, DEFAULT_RIVERFRONT)
-# Closing page now defaults to the SAME heritage photo as the title page
-# (lightly blurred, see draw_closing_slide) so the two bookend slides match;
-# falls back to the riverfront shot only if no heritage photo is available.
-closing_bg = resolve_front_image(closing_bg_upload, DEFAULT_HERITAGE_BG)
+# Closing page defaults to the riverfront shot (so it doesn't look identical
+# to the title page); falls back to the heritage photo if riverfront is missing.
+closing_bg = resolve_front_image(closing_bg_upload, DEFAULT_RIVERFRONT)
 if closing_bg is None:
-    closing_bg = resolve_front_image(None, DEFAULT_RIVERFRONT)
+    closing_bg = resolve_front_image(None, DEFAULT_HERITAGE_BG)
 if heritage_bg is None:
     st.info(f"No heritage background found (looked for `{DEFAULT_HERITAGE_BG}`). Title slide will use a solid navy background instead.")
 if riverfront is None:
@@ -1418,44 +1424,6 @@ if uploaded_docx:
                 f"(e.g. add a number) if they're meant to be different photos."
             )
 
-    # ---- explicit photo placement picker (this is what actually fixes photos
-    # landing on the wrong sub-module) ----
-    # Keyword auto-matching alone was unreliable, so it's used only to
-    # PRE-FILL a suggested sub-module for each photo; you confirm or correct
-    # it here, and THAT choice — not the keyword guess — decides where the
-    # photo ends up in the deck.
-    manual_placement = {}
-    if image_map:
-        st.markdown(
-            "**Confirm where each photo goes.** Each photo below is pre-filled with a "
-            "keyword-based guess (sub-modules whose text mentions its filename). Add or "
-            "remove sub-modules for any photo that's landing in the wrong place — the "
-            "selection you make here is final."
-        )
-        sub_choice_labels = {}
-        for mod_num in sorted(modules.keys(), key=lambda x: int(x)):
-            for sub_num in sorted(modules[mod_num]["subs"].keys(), key=lambda x: tuple(map(int, x.split(".")))):
-                ref = (mod_num, sub_num)
-                sub_choice_labels[ref] = f"{sub_num}  {modules[mod_num]['subs'][sub_num]['title']}"
-        all_refs = list(sub_choice_labels.keys())
-        for kw in sorted(image_map.keys()):
-            file = image_map[kw]
-            default_refs = [r for r in auto_suggest_subs_for_keyword(kw, modules) if r in sub_choice_labels]
-            chosen = st.multiselect(
-                f"📷 {kw}  —  {file.name}",
-                options=all_refs,
-                default=default_refs,
-                format_func=lambda r: sub_choice_labels[r],
-                key=f"placement__{kw}",
-            )
-            manual_placement[kw] = chosen
-        unplaced = [kw for kw, refs in manual_placement.items() if not refs]
-        if unplaced:
-            st.caption(
-                "Not placed on any sub-module (will appear on a reference-photo slide "
-                "near the end instead): " + ", ".join(sorted(unplaced))
-            )
-
     if total_subs == 0:
         st.error("No sub-modules (like 1.1, 1.2) were detected. Check your Word doc headings, "
                   "or adjust MODULE_RE / SUBMODULE_RE in the script if your numbering format differs.")
@@ -1463,7 +1431,6 @@ if uploaded_docx:
         progress = st.progress(0.0, text="Designing slides...")
         with st.spinner("Measuring content and designing slides..."):
             prs = run_build(preface, modules, (left_logo_file, right_logo_file), image_map,
-                              manual_placement,
                               equip_max_repeats=int(equip_max_repeats),
                               heritage_bg=heritage_bg, riverfront=riverfront,
                               progress_cb=lambda f: progress.progress(f, text="Designing slides..."))
