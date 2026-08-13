@@ -39,6 +39,7 @@ HIGHLIGHT_BG = RGBColor(0xC9, 0xF3, 0xEE)
 HIGHLIGHT_TEXT = RGBColor(0x0B, 0x6E, 0x5D)
 WARN_BG = RGBColor(0xFB, 0xE4, 0xE1)
 WARN_TEXT = RGBColor(0x8A, 0x2A, 0x1E)
+
 # Extra accent colors purely for visual variety (module badges, dividers, TOC
 # rows) so the deck doesn't read as one flat navy block after 40 slides.
 PURPLE_ICON = RGBColor(0x8E, 0x44, 0xC2)
@@ -62,7 +63,49 @@ def tint(rgb_color, amount=0.82):
     return RGBColor(r, g, b)
 
 
-FONT = "Noto Sans Gujarati"
+FONT_GUJARATI = "Shruti"
+FONT_ENGLISH = "Calibri"
+
+
+def _is_gujarati_char(ch):
+    return '\u0A80' <= ch <= '\u0AFF'
+
+
+def _split_runs_by_script(text):
+    """Split a string into contiguous (segment, is_gujarati) chunks so mixed
+    Gujarati+English text gets the right font per run instead of one font
+    for the whole line."""
+    if not text:
+        return [("", False)]
+    segments = []
+    cur = text[0]
+    cur_guj = _is_gujarati_char(text[0])
+    for ch in text[1:]:
+        ch_guj = _is_gujarati_char(ch)
+        if ch_guj == cur_guj:
+            cur += ch
+        else:
+            segments.append((cur, cur_guj))
+            cur, cur_guj = ch, ch_guj
+    segments.append((cur, cur_guj))
+    return segments
+
+
+def _apply_run_font(run, is_guj):
+    font_name = FONT_GUJARATI if is_guj else FONT_ENGLISH
+    run.font.name = font_name
+    rPr = run._r.get_or_add_rPr()
+    latin_el = rPr.find(qn('a:latin'))
+    cs_el = rPr.find(qn('a:cs'))
+    if cs_el is None:
+        cs_el = rPr.makeelement(qn('a:cs'), {})
+        if latin_el is not None:
+            latin_el.addnext(cs_el)
+        else:
+            rPr.append(cs_el)
+    cs_el.set('typeface', font_name)
+
+
 # Font files must sit next to this script (or set full paths).
 ASSET_DIR = os.path.dirname(__file__)
 FONT_TTF_REGULAR = os.path.join(ASSET_DIR, "NotoSansGujarati-Regular.ttf")
@@ -100,6 +143,7 @@ IMAGE_CARD_H_IN = 2.15
 # many sub-modules across the whole deck, even if its keyword genuinely
 # appears in more places in the text. Overridable from the Streamlit UI.
 DEFAULT_EQUIP_MAX_REPEATS = 3
+
 
 # ----------------------------------------------------------------------
 # 0.5 IMAGE / PHOTO HELPERS
@@ -179,6 +223,7 @@ FIELD_META = {
     "CHECKLIST":    {"gj": "સુપરવાઇઝર ચેકલિસ્ટ",    "en": "Supervisor Checklist", "icon": "check",  "color": HIGHLIGHT_TEXT, "bullet": True, "group": "quality", "highlight": True},
     "IF_NOT_DONE":  {"gj": "જો ન કરવામાં આવે તો",  "en": "If Not Done",          "icon": "warn",   "color": WARN_TEXT,  "bullet": True,  "group": "quality", "warn": True},
 }
+
 # Order within each grouped slide
 PROCESS_ORDER = ["OBJECTIVE", "TRIGGER", "WHAT_TO_DO", "WHY", "WHOM", "RESPONSIBLE", "TIMELINE"]
 QUALITY_ORDER = ["DOCUMENTATION", "MONITORING", "CHECKLIST", "IF_NOT_DONE"]
@@ -227,10 +272,12 @@ def parse_word(docx_file):
     cur_mod, cur_sub, cur_field = None, None, None
     cur_preface_section = None
     in_body = False  # becomes True once we hit Module 1
+
     for para in doc.paragraphs:
         text = para.text.strip()
         if not text:
             continue
+
         # Preface section headings (only before first Module)
         if not in_body:
             matched_heading = False
@@ -241,6 +288,7 @@ def parse_word(docx_file):
                     break
             if matched_heading:
                 continue
+
         m = MODULE_RE.match(text)
         if m:
             in_body = True
@@ -249,6 +297,7 @@ def parse_word(docx_file):
             modules.setdefault(cur_mod, {"title": m.group(3).strip(), "subs": {}})
             cur_sub, cur_field = None, None
             continue
+
         s = SUBMODULE_RE.match(text)
         if s:
             in_body = True
@@ -261,12 +310,15 @@ def parse_word(docx_file):
                 modules[cur_mod]["subs"][cur_sub][key] = []
             cur_field = None
             continue
+
         if not in_body:
             if cur_preface_section:
                 preface[cur_preface_section].append(text)
             continue
+
         if not cur_sub:
             continue
+
         matched = False
         for key, pat in FIELD_PATTERNS:
             if pat.match(text):
@@ -282,8 +334,10 @@ def parse_word(docx_file):
                 break
         if matched:
             continue
+
         if cur_field:
             modules[cur_mod]["subs"][cur_sub][cur_field].append(text)
+
     return preface, modules
 
 
@@ -421,12 +475,23 @@ def add_text(slide, x, y, w, h, text, size, color, bold=False, align=PP_ALIGN.LE
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         p.alignment = align
         p.line_spacing = 1.18
-        r = p.add_run()
-        r.text = line
-        r.font.size = Pt(size)
-        r.font.bold = bold
-        r.font.name = FONT
-        r.font.color.rgb = color
+        if not line:
+            r = p.add_run()
+            r.text = ""
+            r.font.size = Pt(size)
+            r.font.bold = bold
+            r.font.color.rgb = color
+            _apply_run_font(r, False)
+        else:
+            for seg_text, seg_guj in _split_runs_by_script(line):
+                if not seg_text:
+                    continue
+                r = p.add_run()
+                r.text = seg_text
+                r.font.size = Pt(size)
+                r.font.bold = bold
+                r.font.color.rgb = color
+                _apply_run_font(r, seg_guj)
     return tb
 
 
@@ -439,11 +504,15 @@ def add_items(slide, x, y, w, h, items, size, color, bullet):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         p.line_spacing = 1.18
         p.space_after = Pt(4)
-        r = p.add_run()
-        r.text = (f"\u2022  {item}" if bullet else item)
-        r.font.size = Pt(size)
-        r.font.name = FONT
-        r.font.color.rgb = color
+        text_val = (f"\u2022  {item}" if bullet else item)
+        for seg_text, seg_guj in _split_runs_by_script(text_val):
+            if not seg_text:
+                continue
+            r = p.add_run()
+            r.text = seg_text
+            r.font.size = Pt(size)
+            r.font.color.rgb = color
+            _apply_run_font(r, seg_guj)
     return tb
 
 
@@ -853,7 +922,6 @@ def draw_photo_gallery_slide(prs, items, logos, part_no, part_total):
 
 def draw_title_slide(prs, doc_title, logos, heritage_bg=None, riverfront=None):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
-
     # --- full-bleed blurred heritage photo as the background ---
     bg_drawn = False
     if heritage_bg is not None:
@@ -865,13 +933,10 @@ def draw_title_slide(prs, doc_title, logos, heritage_bg=None, riverfront=None):
             bg_drawn = False
     if not bg_drawn:
         add_rect(slide, 0, 0, SLIDE_W, SLIDE_H, NAVY)
-
     # dark navy veil over the photo so white text/logos stay legible
     veil = add_rect(slide, 0, 0, SLIDE_W, SLIDE_H, NAVY)
     set_shape_alpha(veil, 58)  # ~58% opaque navy over the photo
-
     add_rect(slide, 0, SLIDE_H - Inches(0.18), SLIDE_W, Inches(0.18), GREEN)
-
     # logos, top center, in their own white roundels
     if logos[0] is not None:
         d = Inches(1.05)
@@ -881,14 +946,12 @@ def draw_title_slide(prs, doc_title, logos, heritage_bg=None, riverfront=None):
         d = Inches(1.05)
         add_oval(slide, (SLIDE_W - d) // 2 + Inches(1.3), Inches(0.5), d, WHITE)
         slide.shapes.add_picture(logos[1], (SLIDE_W - d) // 2 + Inches(1.3) + Inches(0.08), Inches(0.58), height=d - Inches(0.16))
-
     add_text(slide, Inches(1), Inches(1.78), SLIDE_W - Inches(2), Inches(0.45),
              "અમદાવાદ મ્યુનિસિપલ કોર્પોરેશન  \u2022  NTEP", 16, RGBColor(0xB9, 0xD3, 0xF2), align=PP_ALIGN.CENTER)
     add_text(slide, Inches(1), Inches(2.25), SLIDE_W - Inches(2), Inches(1.25),
              doc_title, 32, WHITE, bold=True, align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
     add_text(slide, Inches(1), Inches(3.6), SLIDE_W - Inches(2), Inches(0.4),
              "Public Health Actions \u2014 Standard Operating Procedures", 16, RGBColor(0xB9, 0xD3, 0xF2), align=PP_ALIGN.CENTER)
-
     # --- riverfront photo as a crisp decorative banner near the bottom ---
     if riverfront is not None:
         try:
@@ -903,7 +966,6 @@ def draw_title_slide(prs, doc_title, logos, heritage_bg=None, riverfront=None):
                      "સાબરમતી રિવરફ્રન્ટ, અમદાવાદ", 11, RGBColor(0xB9, 0xD3, 0xF2), align=PP_ALIGN.CENTER)
         except Exception:
             pass
-
     return slide
 
 
@@ -913,7 +975,6 @@ def draw_closing_slide(prs, logos, closing_bg=None):
     small tricolor strip + Ashoka Chakra medallion for the India touch
     instead of covering the whole slide in flat color bands."""
     slide = prs.slides.add_slide(prs.slide_layouts[6])
-
     bg_drawn = False
     if closing_bg is not None:
         try:
@@ -924,18 +985,15 @@ def draw_closing_slide(prs, logos, closing_bg=None):
             bg_drawn = False
     if not bg_drawn:
         add_rect(slide, 0, 0, SLIDE_W, SLIDE_H, NAVY)
-
     # Lighter veil than the title slide (58 -> 44) so the photo stays visible.
     veil = add_rect(slide, 0, 0, SLIDE_W, SLIDE_H, NAVY)
     set_shape_alpha(veil, 44)
-
     # thin tricolor accent strip along the very bottom
     strip_h = Inches(0.28)
     third = SLIDE_W // 3
     add_rect(slide, 0, SLIDE_H - strip_h, third, strip_h, SAFFRON)
     add_rect(slide, third, SLIDE_H - strip_h, third, strip_h, WHITE)
     add_rect(slide, 2 * third, SLIDE_H - strip_h, SLIDE_W - 2 * third, strip_h, INDIA_GREEN)
-
     # small Ashoka Chakra medallion, centered, sitting just above the strip
     outer_d = Inches(0.62)
     cx = SLIDE_W // 2
@@ -943,12 +1001,10 @@ def draw_closing_slide(prs, logos, closing_bg=None):
     add_oval(slide, cx - outer_d // 2, cy - outer_d // 2, outer_d, WHITE)
     inner_d = int(outer_d * 0.8)
     draw_ashoka_chakra(slide, cx - inner_d // 2, cy - inner_d // 2, inner_d, CHAKRA_NAVY)
-
     add_text(slide, Inches(1), Inches(2.85), SLIDE_W - Inches(2), Inches(1),
               "આભાર (Thank You)", 34, WHITE, bold=True, align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
     add_text(slide, Inches(1), Inches(3.8), SLIDE_W - Inches(2), Inches(0.5),
               "NTEP  \u2022  Ahmedabad Municipal Corporation", 15, RGBColor(0xB9, 0xD3, 0xF2), align=PP_ALIGN.CENTER)
-
     if logos[0] is not None:
         d = Inches(0.9)
         add_oval(slide, Inches(0.4), Inches(0.4), d, WHITE)
@@ -958,7 +1014,6 @@ def draw_closing_slide(prs, logos, closing_bg=None):
         rx = SLIDE_W - Inches(0.4) - d
         add_oval(slide, rx, Inches(0.4), d, WHITE)
         slide.shapes.add_picture(logos[1], rx + Inches(0.07), Inches(0.4) + Inches(0.07), height=d - Inches(0.14))
-
     return slide
 
 
@@ -1203,6 +1258,7 @@ def run_build(preface, modules, logos, image_map, manual_placement,
     prs = Presentation()
     prs.slide_width = SLIDE_W
     prs.slide_height = SLIDE_H
+
     mod_nums = sorted(modules.keys(), key=lambda x: int(x))
 
     # ---- Pass 1: figure out how many slides everything takes, in order ----
@@ -1226,20 +1282,24 @@ def run_build(preface, modules, logos, image_map, manual_placement,
     toc_col_w_in = ((SLIDE_W - 2 * MARGIN_X - COL_GAP) // 2) / 914400
     toc_pages = paginate_toc(entries, body_h_in_toc, toc_col_w_in)
     n_toc_slides = max(1, len(toc_pages))
+
     overview_slides = 1
 
     submodule_matches = {}
     submodule_plans = {}
+
     # `manual_placement` is {keyword: [(mod_num, sub_num), ...]} built from the
     # user's explicit choices in the Streamlit UI (pre-filled with keyword
     # auto-suggestions, but fully user-editable) — this replaces blind
     # keyword auto-matching as the source of truth for where each photo goes,
     # which is what actually fixes photos landing in the wrong/no slides.
+
     # How many sub-modules each keyword has already been placed into. Walking
     # sub-modules in real document order and capping here means the SAME
     # keyword/photo can never end up in more than `equip_max_repeats` places
     # in the whole deck (defensive re-check — the UI already enforces this).
     equip_usage_count = {kw: 0 for kw in image_map}
+
     for mod_num in mod_nums:
         sub_nums_sorted = sorted(modules[mod_num]["subs"].keys(), key=lambda x: tuple(map(int, x.split("."))))
         for sub_num in sub_nums_sorted:
@@ -1281,6 +1341,7 @@ def run_build(preface, modules, logos, image_map, manual_placement,
     # ---- Pass 2: actually draw everything in the same order ----
     draw_title_slide(prs, "Public Health Actions of the TB Department", logos,
                       heritage_bg=heritage_bg, riverfront=riverfront)
+
     preface_icons = {"PREFACE": "info", "PURPOSE": "target", "OBJECTIVES": "check"}
     preface_headings = {"PREFACE": ("પ્રસ્તાવના", "Preface"), "PURPOSE": ("હેતુ", "Purpose"),
                           "OBJECTIVES": ("માર્ગદર્શિકાના મુખ્ય ઉદ્દેશ્યો", "Key Objectives")}
@@ -1363,6 +1424,7 @@ riverfront = resolve_front_image(riverfront_upload, DEFAULT_RIVERFRONT)
 closing_bg = resolve_front_image(closing_bg_upload, DEFAULT_HERITAGE_BG)
 if closing_bg is None:
     closing_bg = resolve_front_image(None, DEFAULT_RIVERFRONT)
+
 if heritage_bg is None:
     st.info(f"No heritage background found (looked for `{DEFAULT_HERITAGE_BG}`). Title slide will use a solid navy background instead.")
 if riverfront is None:
@@ -1395,7 +1457,9 @@ if uploaded_docx:
     for mod in modules.values():
         for sub in mod["subs"].values():
             sub.setdefault("title_display", sub["title"])
+
     total_subs = sum(len(m["subs"]) for m in modules.values())
+
     with st.expander(f"🔍 Parsed structure — {len(modules)} modules, {total_subs} sub-modules"):
         st.write({"preface": preface, "modules": modules})
 
@@ -1408,6 +1472,7 @@ if uploaded_docx:
         if key in image_map and image_map[key].name != f.name:
             collisions.append((f.name, image_map[key].name, key))
         image_map[key] = f
+
     if image_map:
         st.caption("Equipment keywords detected: " + ", ".join(sorted(image_map.keys())))
     if collisions:
@@ -1437,6 +1502,7 @@ if uploaded_docx:
             for sub_num in sorted(modules[mod_num]["subs"].keys(), key=lambda x: tuple(map(int, x.split(".")))):
                 ref = (mod_num, sub_num)
                 sub_choice_labels[ref] = f"{sub_num}  {modules[mod_num]['subs'][sub_num]['title']}"
+
         all_refs = list(sub_choice_labels.keys())
         for kw in sorted(image_map.keys()):
             file = image_map[kw]
@@ -1449,6 +1515,7 @@ if uploaded_docx:
                 key=f"placement__{kw}",
             )
             manual_placement[kw] = chosen
+
         unplaced = [kw for kw, refs in manual_placement.items() if not refs]
         if unplaced:
             st.caption(
@@ -1471,6 +1538,7 @@ if uploaded_docx:
             prs.save(ppt_io)
             ppt_io.seek(0)
         progress.empty()
+
         st.success(f"✅ Generated {len(prs.slides._sldIdLst)} slides for {total_subs} sub-modules.")
         st.download_button(
             "📄 Download Presentation",
