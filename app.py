@@ -715,20 +715,26 @@ def plan_field_group_slides(items_by_field, field_keys, content_w_in, body_h_in,
     return slides_layout
 
 
+QUALITY_KEYS = set(QUALITY_ORDER)
+
+
 def plan_submodule(sub, image_match=None):
     """Returns list of (group_label, layout) pairs -> total slide count is len(list).
     image_match, if given, is (keyword, file) for the sub-module's equipment photo —
-    it gets embedded as a small card among the process-group slides."""
+    it gets embedded as a small card among the process-group slides.
+    Process and quality fields are packed in one continuous pass (still in
+    PROCESS_ORDER then QUALITY_ORDER sequence) so leftover column space at the
+    end of the process fields gets filled with quality-group cards instead of
+    always forcing a new, mostly-empty slide."""
     col_w_emu = (SLIDE_W - 2 * MARGIN_X - COL_GAP) // 2
     content_w_in = col_w_emu / 914400 - (CARD_PAD / 914400) * 2
     body_h_in = (SLIDE_H - BODY_TOP - BODY_BOTTOM_MARGIN) / 914400
     result = []
-    process_layout = plan_field_group_slides(sub, PROCESS_ORDER, content_w_in, body_h_in, image_piece=image_match)
-    quality_layout = plan_field_group_slides(sub, QUALITY_ORDER, content_w_in, body_h_in)
-    for layout in process_layout:
-        result.append(("process", layout))
-    for layout in quality_layout:
-        result.append(("quality", layout))
+    combined_layout = plan_field_group_slides(sub, FIELD_ORDER, content_w_in, body_h_in, image_piece=image_match)
+    for layout in combined_layout:
+        has_quality = any(key in QUALITY_KEYS for (_, key, *_rest) in layout if key != "IMAGE")
+        group_label = "quality" if has_quality else "process"
+        result.append((group_label, layout))
     if not result:
         result = [("process", [(0, "OBJECTIVE", 12, ["\u2014"], False, 1.0)])]
     return result
