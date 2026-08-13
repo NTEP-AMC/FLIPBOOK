@@ -79,9 +79,11 @@ DEFAULT_RIVERFRONT = os.path.join(ASSET_DIR, "riverfront.jpg")
 MEASURE_DPI = 96
 # PIL has no Indic shaping engine, so it under-measures Gujarati conjuncts/matras.
 # This factor widens every measured line so wrapping matches real PowerPoint
-# rendering instead of overflowing the card. Tune upward if you still see overlap
-# with your real document; 1.14 was enough margin against the real NTEP text.
-GUJ_WIDTH_CORRECTION = 1.14
+# rendering instead of overflowing the card. The measurement font file bundled
+# here is Noto Sans Gujarati, but slides now render in Shruti, which runs
+# noticeably wider — so the correction is bumped up to keep wrapped-line counts
+# (and therefore card heights) safely matching the real Shruti output.
+GUJ_WIDTH_CORRECTION = 1.32
 
 SLIDE_W = Inches(13.333)
 SLIDE_H = Inches(7.5)
@@ -218,6 +220,16 @@ def strip_label(text, pattern):
     return pattern.sub("", text).strip()
 
 
+# Some source documents prefix every "What to do" / checklist line with its own
+# step counter, e.g. "તબક્કો ૧: ...", "તબક્કો ૨: ...". These become redundant
+# once the line is rendered as a bullet point, so they're stripped here.
+STEP_PREFIX_RE = re.compile(r"^\s*(?:તબક્કો|Step)\s*[૦-૯0-9]+\s*[:：]\s*", re.IGNORECASE)
+
+
+def strip_step_prefix(text):
+    return STEP_PREFIX_RE.sub("", text).strip()
+
+
 def parse_word(docx_file):
     """Returns (preface_dict, modules_dict).
     preface_dict: {"PREFACE": [...], "PURPOSE": [...], "OBJECTIVES": [...]}
@@ -274,6 +286,8 @@ def parse_word(docx_file):
             if pat.match(text):
                 value = strip_label(text, pat)
                 cur_field = key
+                if value and FIELD_META[key]["bullet"]:
+                    value = strip_step_prefix(value)
                 # Guard against a source-doc quirk where the last process step and
                 # the next field's label land on the same paragraph with no break
                 # (e.g. "...3. Nikshay માં નોંધવું. જવાબદાર વ્યક્તિ (Responsible Person): STS").
@@ -285,7 +299,8 @@ def parse_word(docx_file):
         if matched:
             continue
         if cur_field:
-            modules[cur_mod]["subs"][cur_sub][cur_field].append(text)
+            line = strip_step_prefix(text) if FIELD_META[cur_field]["bullet"] else text
+            modules[cur_mod]["subs"][cur_sub][cur_field].append(line)
     return preface, modules
 
 
